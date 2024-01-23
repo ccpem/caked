@@ -1,0 +1,14 @@
+# Changes here will be overwritten by Copier
+_commit: f1e40e7
+_src_path: gh:alan-turing-institute/python-project-template
+backend: setuptools
+email: bcostagomes@turing.ac.uk
+full_name: Bea Costa Gomes
+license: MIT
+org: mooniean
+project_name: CAKED
+project_short_description: A dataloader abstract package
+python_name: caked
+python_version_range: '>=3.8'
+typing: loose
+url: https://github.com/mooniean/CAKED
