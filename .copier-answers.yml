@@ -9,6 +9,6 @@ org: mooniean
 project_name: CAKED
 project_short_description: A dataloader abstract package
 python_name: caked
-python_version_range: '>=3.8'
+python_version_range: ">=3.8"
 typing: loose
 url: https://github.com/mooniean/CAKED
