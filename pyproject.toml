@@ -41,10 +41,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/mooniean/CAKED"
-"Bug Tracker" = "https://github.com/mooniean/CAKED/issues"
-Discussions = "https://github.com/mooniean/CAKED/discussions"
-Changelog = "https://github.com/mooniean/CAKED/releases"
+Homepage = "https://github.com/alan-turing-institute/CAKED"
+"Bug Tracker" = "https://github.com/alan-turing-institute/CAKED/issues"
+Discussions = "https://github.com/alan-turing-institute/CAKED/discussions"
+Changelog = "https://github.com/alan-turing-institute/CAKED/releases"
 
 
 [tool.hatch]
