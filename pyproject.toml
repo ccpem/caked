@@ -34,6 +34,7 @@ dependencies = ["torch", "numpy"]
 test = [
   "pytest >=6",
   "pytest-cov >=3",
+  "pre-commit",
 ]
 dev = [
   "pytest >=6",

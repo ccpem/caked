@@ -1,11 +1,17 @@
-from abc import ABC, abstractmethod
-from pathlib import Path
+from __future__ import annotations
 
-from torch.utils.data import DataLoader, Dataset
+from abc import ABC, abstractmethod
 
 
 class AbstractDataLoader(ABC):
-    def __init__(self, pipeline: str, classes: list[str], dataset_size: int, save_to_disk: bool, training: bool):
+    def __init__(
+        self,
+        pipeline: str,
+        classes: list[str],
+        dataset_size: int,
+        save_to_disk: bool,
+        training: bool,
+    ):
         self.pipeline = pipeline
         self.classes = classes
         self.dataset_size = dataset_size
@@ -26,16 +32,10 @@ class AbstractDataLoader(ABC):
 
 
 class AbstractDataset(ABC):
-    def __init__(self, origin: str, classes: Path) -> None:
-        pass
-
-    def __len__(self) -> int:
+    @abstractmethod
+    def set_len(self, length: int):
         pass
 
     @abstractmethod
-    def set_len(self, length:int):
-        pass
-
-    @abstractmethod
-    def augment(self, augment:bool, aug_type:str):
+    def augment(self, augment: bool, aug_type: str):
         pass
