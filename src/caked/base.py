@@ -4,17 +4,28 @@ from pathlib import Path
 from torch.utils.data import DataLoader, Dataset
 
 
-class AbstractDataLoader(DataLoader, ABC):
+class AbstractDataLoader(ABC):
+    def __init__(self, pipeline: str, classes: list[str], dataset_size: int, save_to_disk: bool, training: bool):
+        self.pipeline = pipeline
+        self.classes = classes
+        self.dataset_size = dataset_size
+        self.save_to_disk = save_to_disk
+        self.training = training
+
     @abstractmethod
-    def read(self, pipeline, classes, volume_size, dataset_size, save_to_disk):
+    def load(self):
         pass
 
     @abstractmethod
-    def process(self, dataset, classes, split_size, batch_size, training):
+    def process(self):
+        pass
+
+    @abstractmethod
+    def get_loader(self, split_size: float, batch_size: int):
         pass
 
 
-class AbstractDataset(ABC, Dataset):
+class AbstractDataset(ABC):
     def __init__(self, origin: str, classes: Path) -> None:
         pass
 
@@ -28,4 +39,3 @@ class AbstractDataset(ABC, Dataset):
     @abstractmethod
     def augment(self, augment:bool, aug_type:str):
         pass
-    

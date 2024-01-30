@@ -28,7 +28,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 
-dependencies = []
+dependencies = ["torch", "numpy"]
 
 [project.optional-dependencies]
 test = [
