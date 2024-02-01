@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from caked.dataloader import DiskDataLoader
+from caked.dataloader import DiskDataLoader, DiskDataset
 
 
 def test_class_instantiation():
@@ -12,3 +12,8 @@ def test_class_instantiation():
         training=True,
     )
     assert isinstance(test_loader, DiskDataLoader)
+
+
+def test_dataset_instantiation():
+    test_dataset = DiskDataset(paths=["test"])
+    assert isinstance(test_dataset, DiskDataset)

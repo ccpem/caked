@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from torch.utils.data import Dataset
+
 
 class AbstractDataLoader(ABC):
     def __init__(
@@ -31,11 +33,7 @@ class AbstractDataLoader(ABC):
         pass
 
 
-class AbstractDataset(ABC):
-    @abstractmethod
-    def set_len(self, length: int):
-        pass
-
+class AbstractDataset(ABC, Dataset):
     @abstractmethod
     def augment(self, augment: bool, aug_type: str):
         pass

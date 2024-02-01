@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-from .base import AbstractDataLoader, AbstractDataset
+import logging
 import os
 import random
 import typing
-import numpy as np
-import pandas as pd
-import logging
+
 import mrcfile
+import numpy as np
 import torch
-from torchvision import transforms
 from scipy.ndimage import zoom
+from torchvision import transforms
+
+from .base import AbstractDataLoader, AbstractDataset
+
 
 class DiskDataLoader(AbstractDataLoader):
     def __init__(
@@ -18,19 +20,18 @@ class DiskDataLoader(AbstractDataLoader):
         dataset_size: int | None = None,
         save_to_disk: bool = False,
         training: bool = True,
-        classes: list[str] = [],
+        classes: list[str] | None = None,
         pipeline: str = "disk",
     ) -> None:
+        if classes is None:
+            classes = []
         super().__init__(pipeline, classes, dataset_size, save_to_disk, training)
 
     def load(self, datapath, datatype):
-        paths = [
-            f for f in os.listdir(datapath) if "." + datatype in f
-        ]
+        paths = [f for f in os.listdir(datapath) if "." + datatype in f]
 
         random.shuffle(paths)
 
-        
         # ids right now depend on the data being saved with a certain format (id in the first part of the name, separated by _)
         # TODO: make this more general/document in the README
         ids = np.unique([f.split("_")[0] for f in paths])
@@ -39,12 +40,10 @@ class DiskDataLoader(AbstractDataLoader):
         else:
             class_check = np.in1d(self.classes, ids)
             if not np.all(class_check):
-                raise RuntimeError(
-                    "Not all classes in the list are present in the "
-                    "directory. Missing classes: {}".format(
-                        np.asarray(ids)[~class_check]
-                    )
+                msg = "Not all classes in the list are present in the directory. Missing classes: {}".format(
+                    np.asarray(ids)[~class_check]
                 )
+                raise RuntimeError(msg)
             class_check = np.in1d(ids, self.classes)
             if not np.all(class_check):
                 logging.info(
@@ -55,17 +54,12 @@ class DiskDataLoader(AbstractDataLoader):
                 )
 
             # subset affinity matrix with only the relevant classes
-            
-        paths = [
-            p
-            for p in paths
-            for c in self.classes
-            if c in p.split("_")[0]
-        ]
-        if self.dataset_size is not None:
-            paths = paths[:self.dataset_size]
 
-        self.dataset = DiskDataset(paths = paths, datatype = datatype)
+        paths = [p for p in paths for c in self.classes if c in p.split("_")[0]]
+        if self.dataset_size is not None:
+            paths = paths[: self.dataset_size]
+
+        self.dataset = DiskDataset(paths=paths, datatype=datatype)
         return super().load()
 
     def process(self):
@@ -76,7 +70,16 @@ class DiskDataLoader(AbstractDataLoader):
 
 
 class DiskDataset(AbstractDataset):
-    def __init__(self, paths:list[str], datatype:str = "npy", rescale: bool = False, shiftmin: bool = False, gaussianblur: bool = False, normalise: bool = False, input_transform: typing.Any = None) -> None:
+    def __init__(
+        self,
+        paths: list[str],
+        datatype: str = "npy",
+        rescale: bool = False,
+        shiftmin: bool = False,
+        gaussianblur: bool = False,
+        normalise: bool = False,
+        input_transform: typing.Any = None,
+    ) -> None:
         self.paths = paths
         self.rescale = rescale
         self.normalise = normalise
@@ -86,7 +89,7 @@ class DiskDataset(AbstractDataset):
         self.datatype = datatype
         self.shiftmin = shiftmin
         super().__init__()
-    
+
     def __len__(self):
         return len(self.paths)
 
@@ -105,19 +108,18 @@ class DiskDataset(AbstractDataset):
         return x, y
 
     def read(self, filename):
-
         if self.datatype == "npy":
             return np.load(filename)
 
         elif self.datatype == "mrc":
             with mrcfile.open(filename) as f:
                 return np.array(f.data)
-            
+
         else:
-            raise RuntimeError("Currently we only support mrcfile and numpy arrays.")
+            msg = "Currently we only support mrcfile and numpy arrays."
+            raise RuntimeError(msg)
 
     def transformation(self, x):
-
         if self.rescale:
             x = np.asarray(x, dtype=np.float32)
             sh = tuple([self.rescale / s for s in x.shape])
@@ -143,3 +145,6 @@ class DiskDataset(AbstractDataset):
         if self.transform:
             x = self.transform(x)
         return x
+
+    def augment(self, augment):
+        raise NotImplementedError
