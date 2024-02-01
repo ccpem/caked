@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import typing
+from pathlib import Path
 
 import mrcfile
 import numpy as np
@@ -23,9 +24,12 @@ class DiskDataLoader(AbstractDataLoader):
         classes: list[str] | None = None,
         pipeline: str = "disk",
     ) -> None:
+        self.dataset_size = dataset_size
+        self.save_to_disk = save_to_disk
+        self.training = training
+        self.pipeline = pipeline
         if classes is None:
             classes = []
-        super().__init__(pipeline, classes, dataset_size, save_to_disk, training)
 
     def load(self, datapath, datatype):
         paths = [f for f in os.listdir(datapath) if "." + datatype in f]
@@ -46,11 +50,11 @@ class DiskDataLoader(AbstractDataLoader):
                 raise RuntimeError(msg)
             class_check = np.in1d(ids, self.classes)
             if not np.all(class_check):
+                logging.basicConfig(format="%(message)s", level=logging.INFO)
                 logging.info(
                     "Not all classes in the directory are present in the "
-                    "classes list. Missing classes: {}. They will be ignored.".format(
-                        np.asarray(ids)[~class_check]
-                    )
+                    "classes list. Missing classes: %s. They will be ignored.",
+                    (np.asarray(ids)[~class_check]),
                 )
 
             # subset affinity matrix with only the relevant classes
@@ -103,7 +107,7 @@ class DiskDataset(AbstractDataset):
         x = self.transformation(data)
 
         # ground truth
-        y = os.path.basename(filename).split("_")[0]
+        y = Path(filename).name.split("_")[0]
 
         return x, y
 
@@ -111,7 +115,7 @@ class DiskDataset(AbstractDataset):
         if self.datatype == "npy":
             return np.load(filename)
 
-        elif self.datatype == "mrc":
+        if self.datatype == "mrc":
             with mrcfile.open(filename) as f:
                 return np.array(f.data)
 

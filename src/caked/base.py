@@ -10,9 +10,9 @@ class AbstractDataLoader(ABC):
         self,
         pipeline: str,
         classes: list[str],
-        dataset_size: int,
         save_to_disk: bool,
         training: bool,
+        dataset_size: int | None = None,
     ):
         self.pipeline = pipeline
         self.classes = classes
