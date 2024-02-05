@@ -21,7 +21,7 @@ class AbstractDataLoader(ABC):
         self.training = training
 
     @abstractmethod
-    def load(self):
+    def load(self, datapath, datatype):
         pass
 
     @abstractmethod

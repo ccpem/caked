@@ -29,9 +29,11 @@ class DiskDataLoader(AbstractDataLoader):
         self.training = training
         self.pipeline = pipeline
         if classes is None:
-            classes = []
+            self.classes = []
+        else:
+            self.classes = classes
 
-    def load(self, datapath, datatype):
+    def load(self, datapath, datatype) -> None:
         paths = [f for f in os.listdir(datapath) if "." + datatype in f]
 
         random.shuffle(paths)
@@ -57,14 +59,16 @@ class DiskDataLoader(AbstractDataLoader):
                     (np.asarray(ids)[~class_check]),
                 )
 
-            # subset affinity matrix with only the relevant classes
-
-        paths = [p for p in paths for c in self.classes if c in p.split("_")[0]]
+        paths = [
+            Path(datapath) / p
+            for p in paths
+            for c in self.classes
+            if c in p.split("_")[0]
+        ]
         if self.dataset_size is not None:
             paths = paths[: self.dataset_size]
 
         self.dataset = DiskDataset(paths=paths, datatype=datatype)
-        return super().load()
 
     def process(self):
         return super().process()
@@ -92,7 +96,6 @@ class DiskDataset(AbstractDataset):
         self.transform = input_transform
         self.datatype = datatype
         self.shiftmin = shiftmin
-        super().__init__()
 
     def __len__(self):
         return len(self.paths)
