@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import os
-import random
 from pathlib import Path
 
-import numpy as np
 import pytest
 import torch
 from tests import testdata_mrc
@@ -76,19 +73,7 @@ def test_load_dataset_missing_class():
         classes=DISK_CLASSES_MISSING,
         dataset_size=DATASET_SIZE_ALL,
     )
-    paths = [f for f in os.listdir(TEST_DATA_MRC) if "." + DATATYPE_MRC in f]
-
-    random.shuffle(paths)
-
-    # ids right now depend on the data being saved with a certain format (id in the first part of the name, separated by _)
-    # TODO: make this more general/document in the README
-    ids = np.unique([f.split("_")[0] for f in paths])
-    assert test_loader.classes == DISK_CLASSES_MISSING
-    classes = test_loader.classes
-    class_check = np.in1d(classes, ids)
-    if not np.all(class_check):
-        print(class_check)
-    with pytest.raises(Exception, match=r".* Missing classes: .*"):
+    with pytest.raises(Exception, match=r".*Missing classes: .*"):
         test_loader.load(datapath=TEST_DATA_MRC, datatype=DATATYPE_MRC)
 
 

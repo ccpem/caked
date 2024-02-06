@@ -47,7 +47,7 @@ class DiskDataLoader(AbstractDataLoader):
             class_check = np.in1d(self.classes, ids)
             if not np.all(class_check):
                 msg = "Not all classes in the list are present in the directory. Missing classes: {}".format(
-                    np.asarray(ids)[~class_check]
+                    np.asarray(self.classes)[~class_check]
                 )
                 raise RuntimeError(msg)
             class_check = np.in1d(ids, self.classes)
