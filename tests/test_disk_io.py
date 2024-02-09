@@ -86,3 +86,30 @@ def test_one_image():
     test_item_image, test_item_name = test_dataset.__getitem__(1)
     assert test_item_name in DISK_CLASSES_FULL
     assert isinstance(test_item_image, torch.Tensor)
+
+
+def test_get_loader_training_false():
+    test_loader = DiskDataLoader(
+        pipeline=DISK_PIPELINE,
+        classes=DISK_CLASSES_FULL,
+        dataset_size=DATASET_SIZE_ALL,
+        training=False,
+    )
+    test_loader.load(datapath=TEST_DATA_MRC, datatype=DATATYPE_MRC)
+    torch_loader = test_loader.get_loader(batch_size=64)
+    assert isinstance(torch_loader, torch.utils.data.DataLoader)
+
+
+def test_get_loader_training_true():
+    test_loader = DiskDataLoader(
+        pipeline=DISK_PIPELINE,
+        classes=DISK_CLASSES_FULL,
+        dataset_size=DATASET_SIZE_ALL,
+        training=True,
+    )
+    test_loader.load(datapath=TEST_DATA_MRC, datatype=DATATYPE_MRC)
+    torch_loader_train, torch_loader_val = test_loader.get_loader(
+        split_size=0.8, batch_size=64
+    )
+    assert isinstance(torch_loader_train, torch.utils.data.DataLoader)
+    assert isinstance(torch_loader_val, torch.utils.data.DataLoader)

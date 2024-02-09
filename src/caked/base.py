@@ -29,7 +29,11 @@ class AbstractDataLoader(ABC):
         pass
 
     @abstractmethod
-    def get_loader(self, split_size: float, batch_size: int):
+    def get_loader(
+        self,
+        batch_size: int,
+        split_size: float | None = None,
+    ):
         pass
 
 

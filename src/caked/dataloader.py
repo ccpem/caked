@@ -10,6 +10,7 @@ import mrcfile
 import numpy as np
 import torch
 from scipy.ndimage import zoom
+from torch.utils.data import DataLoader, Subset
 from torchvision import transforms
 
 from .base import AbstractDataLoader, AbstractDataset
@@ -73,8 +74,46 @@ class DiskDataLoader(AbstractDataLoader):
     def process(self):
         return super().process()
 
-    def get_loader(self, split_size: float, batch_size: int):
-        return super().get_loader(split_size, batch_size)
+    def get_loader(self, batch_size: int, split_size: float | None = None):
+        if self.training:
+            if split_size is None:
+                msg = "Split size must be provided for training. "
+                raise RuntimeError(msg)
+            # split into train / val sets
+            idx = np.random.permutation(len(self.dataset))
+            if split_size < 1:
+                split_size = split_size * 100
+
+            s = int(np.ceil(len(self.dataset) * int(split_size) / 100))
+            if s < 2:
+                msg = "Train and validation sets must be larger than 1 sample, train: {}, val: {}.".format(
+                    len(idx[:-s]), len(idx[-s:])
+                )
+                raise RuntimeError(msg)
+            train_data = Subset(self.dataset, indices=idx[:-s])
+            val_data = Subset(self.dataset, indices=idx[-s:])
+
+            self.loader_train = DataLoader(
+                train_data,
+                batch_size=batch_size,
+                num_workers=0,
+                shuffle=True,
+            )
+            self.loader_val = DataLoader(
+                val_data,
+                batch_size=batch_size,
+                num_workers=0,
+                shuffle=True,
+            )
+            return self.loader_val, self.loader_train
+
+        self.loader = DataLoader(
+            self.dataset,
+            batch_size=batch_size,
+            num_workers=0,
+            shuffle=True,
+        )
+        return self.loader
 
 
 class DiskDataset(AbstractDataset):
