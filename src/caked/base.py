@@ -25,7 +25,7 @@ class AbstractDataLoader(ABC):
         pass
 
     @abstractmethod
-    def process(self):
+    def process(self, paths, datatype):
         pass
 
     @abstractmethod

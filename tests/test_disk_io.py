@@ -18,6 +18,8 @@ DISK_CLASSES_SOME = ["1b23", "1dkg"]
 DISK_CLASSES_MISSING = ["2b3a", "1b23"]
 DISK_CLASSES_NONE = None
 DATATYPE_MRC = "mrc"
+TRANSFORM_ALL = "rescale,normalise,gaussianblur,shiftmin"
+TRANSFORM_SOME = "rescale,gaussianblur"
 
 
 def test_class_instantiation():
@@ -127,3 +129,33 @@ def test_get_loader_training_fail():
         torch_loader_train, torch_loader_val = test_loader.get_loader(
             split_size=1, batch_size=64
         )
+
+
+def test_processing_data_all_transforms():
+    test_loader = DiskDataLoader(
+        pipeline=DISK_PIPELINE,
+        classes=DISK_CLASSES_FULL,
+        dataset_size=DATASET_SIZE_ALL,
+        training=True,
+        transformations=TRANSFORM_ALL,
+    )
+    test_loader.load(datapath=TEST_DATA_MRC, datatype=DATATYPE_MRC)
+    assert test_loader.dataset.normalise
+    assert test_loader.dataset.shiftmin
+    assert test_loader.dataset.gaussianblur
+    assert test_loader.dataset.rescale
+
+
+def test_processing_data_some_transforms():
+    test_loader = DiskDataLoader(
+        pipeline=DISK_PIPELINE,
+        classes=DISK_CLASSES_FULL,
+        dataset_size=DATASET_SIZE_ALL,
+        training=True,
+        transformations=TRANSFORM_SOME,
+    )
+    test_loader.load(datapath=TEST_DATA_MRC, datatype=DATATYPE_MRC)
+    assert not test_loader.dataset.normalise
+    assert not test_loader.dataset.shiftmin
+    assert test_loader.dataset.gaussianblur
+    assert test_loader.dataset.rescale

@@ -15,6 +15,9 @@ from torchvision import transforms
 
 from .base import AbstractDataLoader, AbstractDataset
 
+np.random.seed(42)
+TRANSFORM_OPTIONS = ["rescale", "normalise", "gaussianblur", "shiftmin"]
+
 
 class DiskDataLoader(AbstractDataLoader):
     def __init__(
@@ -24,11 +27,13 @@ class DiskDataLoader(AbstractDataLoader):
         training: bool = True,
         classes: list[str] | None = None,
         pipeline: str = "disk",
+        transformations: str | None = None,
     ) -> None:
         self.dataset_size = dataset_size
         self.save_to_disk = save_to_disk
         self.training = training
         self.pipeline = pipeline
+        self.transformations = transformations
         if classes is None:
             self.classes = []
         else:
@@ -69,10 +74,27 @@ class DiskDataLoader(AbstractDataLoader):
         if self.dataset_size is not None:
             paths = paths[: self.dataset_size]
 
-        self.dataset = DiskDataset(paths=paths, datatype=datatype)
+        if self.transformations is None:
+            self.dataset = DiskDataset(paths=paths, datatype=datatype)
+        else:
+            self.dataset = self.process(paths=paths, datatype=datatype)
 
-    def process(self):
-        return super().process()
+    def process(self, paths: list[str], datatype: str):
+        if self.transformations is None:
+            msg = "No processing to do as no transformations were provided."
+            raise RuntimeError(msg)
+        transforms = self.transformations.split(",")
+        rescale, normalise, gaussianblur, shiftmin = np.in1d(
+            TRANSFORM_OPTIONS, transforms
+        )
+        return DiskDataset(
+            paths=paths,
+            datatype=datatype,
+            rescale=rescale,
+            normalise=normalise,
+            gaussianblur=gaussianblur,
+            shiftmin=shiftmin,
+        )
 
     def get_loader(self, batch_size: int, split_size: float | None = None):
         if self.training:
@@ -130,7 +152,6 @@ class DiskDataset(AbstractDataset):
         self.rescale = rescale
         self.normalise = normalise
         self.gaussianblur = gaussianblur
-        self.rescale = rescale
         self.transform = input_transform
         self.datatype = datatype
         self.shiftmin = shiftmin
