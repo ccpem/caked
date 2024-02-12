@@ -93,27 +93,26 @@ class DiskDataLoader(AbstractDataLoader):
             train_data = Subset(self.dataset, indices=idx[:-s])
             val_data = Subset(self.dataset, indices=idx[-s:])
 
-            self.loader_train = DataLoader(
+            loader_train = DataLoader(
                 train_data,
                 batch_size=batch_size,
                 num_workers=0,
                 shuffle=True,
             )
-            self.loader_val = DataLoader(
+            loader_val = DataLoader(
                 val_data,
                 batch_size=batch_size,
                 num_workers=0,
                 shuffle=True,
             )
-            return self.loader_val, self.loader_train
+            return loader_val, loader_train
 
-        self.loader = DataLoader(
+        return DataLoader(
             self.dataset,
             batch_size=batch_size,
             num_workers=0,
             shuffle=True,
         )
-        return self.loader
 
 
 class DiskDataset(AbstractDataset):

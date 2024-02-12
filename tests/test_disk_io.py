@@ -113,3 +113,17 @@ def test_get_loader_training_true():
     )
     assert isinstance(torch_loader_train, torch.utils.data.DataLoader)
     assert isinstance(torch_loader_val, torch.utils.data.DataLoader)
+
+
+def test_get_loader_training_fail():
+    test_loader = DiskDataLoader(
+        pipeline=DISK_PIPELINE,
+        classes=DISK_CLASSES_FULL,
+        dataset_size=DATASET_SIZE_ALL,
+        training=True,
+    )
+    test_loader.load(datapath=TEST_DATA_MRC, datatype=DATATYPE_MRC)
+    with pytest.raises(Exception, match=r".* sets must be larger than .*"):
+        torch_loader_train, torch_loader_val = test_loader.get_loader(
+            split_size=1, batch_size=64
+        )
