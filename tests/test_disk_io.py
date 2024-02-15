@@ -35,7 +35,7 @@ def test_class_instantiation():
 
 
 def test_dataset_instantiation():
-    test_dataset = DiskDataset(paths=["test"])
+    test_dataset = DiskDataset(datapath=TEST_DATA_MRC, datatype=DATATYPE_MRC)
     assert isinstance(test_dataset, DiskDataset)
 
 
