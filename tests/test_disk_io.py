@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 from tests import testdata_mrc, testdata_npy
@@ -170,6 +171,10 @@ def test_processing_data_all_transforms():
     assert test_loader.dataset.normalise
     assert test_loader.dataset.shiftmin
     assert test_loader.dataset.gaussianblur
+    image, label = next(iter(test_loader.dataset))
+    image = np.squeeze(image.cpu().numpy())
+    assert len(image[0]) == len(image[1]) == len(image[2])
+    assert label in DISK_CLASSES_FULL_MRC
 
 
 def test_processing_data_some_transforms_npy():
@@ -191,3 +196,13 @@ def test_processing_data_some_transforms_npy():
     assert test_loader_transf.dataset.normalise
     assert not test_loader_transf.dataset.shiftmin
     assert test_loader_transf.dataset.gaussianblur
+    image_none, label_none = next(iter(test_loader_none.dataset))
+    image_none = np.squeeze(image_none.cpu().numpy())
+    assert len(image_none[0]) == len(image_none[1])
+    assert label_none in DISK_CLASSES_FULL_NPY
+    image_transf, label_transf = next(iter(test_loader_transf.dataset))
+    image_transf = np.squeeze(image_transf.cpu().numpy())
+    assert len(image_transf[0]) == len(image_transf[1])
+    assert label_transf in DISK_CLASSES_FULL_NPY
+    assert len(image_none[0]) == len(image_transf[0])
+    assert len(image_none[1]) == len(image_transf[1])
