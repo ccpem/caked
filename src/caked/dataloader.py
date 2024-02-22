@@ -16,7 +16,7 @@ from torchvision import transforms
 from .base import AbstractDataLoader, AbstractDataset
 
 np.random.seed(42)
-TRANSFORM_OPTIONS = ["rescale", "normalise", "gaussianblur", "shiftmin"]
+TRANSFORM_OPTIONS = ["normalise", "gaussianblur", "shiftmin"]
 
 
 class DiskDataLoader(AbstractDataLoader):
@@ -84,9 +84,14 @@ class DiskDataLoader(AbstractDataLoader):
             msg = "No processing to do as no transformations were provided."
             raise RuntimeError(msg)
         transforms = self.transformations.split(",")
-        rescale, normalise, gaussianblur, shiftmin = np.in1d(
-            TRANSFORM_OPTIONS, transforms
-        )
+        rescale = 0
+        for i in transforms:
+            if i.startswith("rescale"):
+                transforms.remove(i)
+                rescale = int(i.split("=")[-1])
+
+        normalise, gaussianblur, shiftmin = np.in1d(TRANSFORM_OPTIONS, transforms)
+
         return DiskDataset(
             paths=paths,
             datatype=datatype,
@@ -142,7 +147,7 @@ class DiskDataset(AbstractDataset):
         self,
         paths: list[str],
         datatype: str = "npy",
-        rescale: bool = False,
+        rescale: int = 0,
         shiftmin: bool = False,
         gaussianblur: bool = False,
         normalise: bool = False,

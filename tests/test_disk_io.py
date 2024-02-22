@@ -26,7 +26,9 @@ DISK_CLASSES_NONE = None
 DATATYPE_MRC = "mrc"
 DATATYPE_NPY = "npy"
 TRANSFORM_ALL = "normalise,gaussianblur,shiftmin"
+TRANSFORM_ALL_RESCALE = "normalise,gaussianblur,shiftmin,rescale=0"
 TRANSFORM_SOME = "normalise,gaussianblur"
+TRANSFORM_RESCALE = "rescale=32"
 
 
 def test_class_instantiation():
@@ -206,3 +208,39 @@ def test_processing_data_some_transforms_npy():
     assert label_transf in DISK_CLASSES_FULL_NPY
     assert len(image_none[0]) == len(image_transf[0])
     assert len(image_none[1]) == len(image_transf[1])
+
+
+def test_processing_data_rescale():
+    test_loader = DiskDataLoader(
+        pipeline=DISK_PIPELINE,
+        classes=DISK_CLASSES_FULL_MRC,
+        dataset_size=DATASET_SIZE_ALL,
+        training=True,
+        transformations=TRANSFORM_ALL_RESCALE,
+    )
+    test_loader.load(datapath=TEST_DATA_MRC, datatype=DATATYPE_MRC)
+    assert test_loader.dataset.normalise
+    assert test_loader.dataset.shiftmin
+    assert test_loader.dataset.gaussianblur
+    assert test_loader.dataset.rescale == 0
+    image, label = next(iter(test_loader.dataset))
+    image = np.squeeze(image.cpu().numpy())
+    assert len(image[0]) == len(image[1]) == len(image[2])
+    assert label in DISK_CLASSES_FULL_MRC
+
+    test_loader = DiskDataLoader(
+        pipeline=DISK_PIPELINE,
+        classes=DISK_CLASSES_FULL_MRC,
+        dataset_size=DATASET_SIZE_ALL,
+        training=True,
+        transformations=TRANSFORM_RESCALE,
+    )
+    test_loader.load(datapath=TEST_DATA_MRC, datatype=DATATYPE_MRC)
+    assert not test_loader.dataset.normalise
+    assert not test_loader.dataset.shiftmin
+    assert not test_loader.dataset.gaussianblur
+    assert test_loader.dataset.rescale == 32
+    image, label = next(iter(test_loader.dataset))
+    image = np.squeeze(image.cpu().numpy())
+    assert len(image[0]) == len(image[1]) == len(image[2])
+    assert label in DISK_CLASSES_FULL_MRC
