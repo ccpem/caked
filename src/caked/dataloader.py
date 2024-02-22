@@ -15,6 +15,9 @@ from torchvision import transforms
 
 from .base import AbstractDataLoader, AbstractDataset
 
+np.random.seed(42)
+TRANSFORM_OPTIONS = ["normalise", "gaussianblur", "shiftmin"]
+
 
 class DiskDataLoader(AbstractDataLoader):
     def __init__(
@@ -24,11 +27,15 @@ class DiskDataLoader(AbstractDataLoader):
         training: bool = True,
         classes: list[str] | None = None,
         pipeline: str = "disk",
+        transformations: str | None = None,
     ) -> None:
         self.dataset_size = dataset_size
         self.save_to_disk = save_to_disk
         self.training = training
         self.pipeline = pipeline
+        self.transformations = transformations
+        self.debug = False
+
         if classes is None:
             self.classes = []
         else:
@@ -37,7 +44,8 @@ class DiskDataLoader(AbstractDataLoader):
     def load(self, datapath, datatype) -> None:
         paths = [f for f in os.listdir(datapath) if "." + datatype in f]
 
-        random.shuffle(paths)
+        if not self.debug:
+            random.shuffle(paths)
 
         # ids right now depend on the data being saved with a certain format (id in the first part of the name, separated by _)
         # TODO: make this more general/document in the README
@@ -69,10 +77,32 @@ class DiskDataLoader(AbstractDataLoader):
         if self.dataset_size is not None:
             paths = paths[: self.dataset_size]
 
-        self.dataset = DiskDataset(paths=paths, datatype=datatype)
+        if self.transformations is None:
+            self.dataset = DiskDataset(paths=paths, datatype=datatype)
+        else:
+            self.dataset = self.process(paths=paths, datatype=datatype)
 
-    def process(self):
-        return super().process()
+    def process(self, paths: list[str], datatype: str):
+        if self.transformations is None:
+            msg = "No processing to do as no transformations were provided."
+            raise RuntimeError(msg)
+        transforms = self.transformations.split(",")
+        rescale = 0
+        for i in transforms:
+            if i.startswith("rescale"):
+                transforms.remove(i)
+                rescale = int(i.split("=")[-1])
+
+        normalise, gaussianblur, shiftmin = np.in1d(TRANSFORM_OPTIONS, transforms)
+
+        return DiskDataset(
+            paths=paths,
+            datatype=datatype,
+            rescale=rescale,
+            normalise=normalise,
+            gaussianblur=gaussianblur,
+            shiftmin=shiftmin,
+        )
 
     def get_loader(self, batch_size: int, split_size: float | None = None):
         if self.training:
@@ -120,7 +150,7 @@ class DiskDataset(AbstractDataset):
         self,
         paths: list[str],
         datatype: str = "npy",
-        rescale: bool = False,
+        rescale: int = 0,
         shiftmin: bool = False,
         gaussianblur: bool = False,
         normalise: bool = False,
@@ -130,7 +160,6 @@ class DiskDataset(AbstractDataset):
         self.rescale = rescale
         self.normalise = normalise
         self.gaussianblur = gaussianblur
-        self.rescale = rescale
         self.transform = input_transform
         self.datatype = datatype
         self.shiftmin = shiftmin
