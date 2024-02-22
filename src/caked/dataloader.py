@@ -34,6 +34,8 @@ class DiskDataLoader(AbstractDataLoader):
         self.training = training
         self.pipeline = pipeline
         self.transformations = transformations
+        self.debug = False
+
         if classes is None:
             self.classes = []
         else:
@@ -42,7 +44,8 @@ class DiskDataLoader(AbstractDataLoader):
     def load(self, datapath, datatype) -> None:
         paths = [f for f in os.listdir(datapath) if "." + datatype in f]
 
-        random.shuffle(paths)
+        if not self.debug:
+            random.shuffle(paths)
 
         # ids right now depend on the data being saved with a certain format (id in the first part of the name, separated by _)
         # TODO: make this more general/document in the README

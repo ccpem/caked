@@ -244,3 +244,30 @@ def test_processing_data_rescale():
     image = np.squeeze(image.cpu().numpy())
     assert len(image[0]) == len(image[1]) == len(image[2])
     assert label in DISK_CLASSES_FULL_MRC
+
+
+def test_processing_after_load():
+    test_loader = DiskDataLoader(
+        pipeline=DISK_PIPELINE,
+        classes=DISK_CLASSES_FULL_MRC,
+        dataset_size=DATASET_SIZE_ALL,
+        training=False,
+    )
+    test_loader.debug = True
+    test_loader.load(datapath=TEST_DATA_MRC, datatype=DATATYPE_MRC)
+    assert test_loader.transformations is None
+    assert not test_loader.dataset.normalise
+    assert not test_loader.dataset.shiftmin
+    assert not test_loader.dataset.gaussianblur
+    test_loader.transformations = TRANSFORM_ALL_RESCALE
+    pre_dataset = test_loader.dataset
+    test_loader.load(datapath=TEST_DATA_MRC, datatype=DATATYPE_MRC)
+    post_dataset = test_loader.dataset
+    assert test_loader.dataset.normalise
+    assert test_loader.dataset.shiftmin
+    assert test_loader.dataset.gaussianblur
+    assert len(post_dataset) == len(pre_dataset)
+    pre_image, pre_label = next(iter(pre_dataset))
+    post_image, post_label = next(iter(post_dataset))
+    assert pre_label == post_label
+    assert not torch.equal(pre_image, post_image)
