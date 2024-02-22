@@ -32,6 +32,9 @@ TRANSFORM_RESCALE = "rescale=32"
 
 
 def test_class_instantiation():
+    """
+    Test the instantiation of the DiskDataLoader class.
+    """
     test_loader = DiskDataLoader(
         pipeline=DISK_PIPELINE,
         classes=DISK_CLASSES_SOME_MRC,
@@ -44,16 +47,25 @@ def test_class_instantiation():
 
 
 def test_dataset_instantiation_mrc():
+    """
+    Test case for instantiating a DiskDataset with MRC data.
+    """
     test_dataset = DiskDataset(paths=TEST_DATA_MRC, datatype=DATATYPE_MRC)
     assert isinstance(test_dataset, DiskDataset)
 
 
 def test_dataset_instantiation_npy():
+    """
+    Test case for instantiating a DiskDataset with npy datatype.
+    """
     test_dataset = DiskDataset(paths=TEST_DATA_MRC, datatype=DATATYPE_MRC)
     assert isinstance(test_dataset, DiskDataset)
 
 
 def test_load_dataset_no_classes():
+    """
+    Test case for loading dataset without specifying classes.
+    """
     test_loader = DiskDataLoader(
         pipeline=DISK_PIPELINE, classes=DISK_CLASSES_NONE, dataset_size=DATASET_SIZE_ALL
     )
@@ -64,6 +76,9 @@ def test_load_dataset_no_classes():
 
 
 def test_load_dataset_all_classes_mrc():
+    """
+    Test case for loading a dataset with all classes using DiskDataLoader.
+    """
     test_loader = DiskDataLoader(
         pipeline=DISK_PIPELINE,
         classes=DISK_CLASSES_FULL_MRC,
@@ -76,6 +91,15 @@ def test_load_dataset_all_classes_mrc():
 
 
 def test_load_dataset_all_classes_npy():
+    """
+    Test case for loading a dataset with all classes using npy files.
+
+    This test creates a DiskDataLoader object with a specified pipeline, classes, and dataset size.
+    It then loads the dataset from a specified datapath using npy files.
+    The test asserts that the dataset is an instance of DiskDataset,
+    the number of classes in the loader matches the number of classes in the specified classes list,
+    and that each class in the loader matches the corresponding class in the specified classes list.
+    """
     test_loader = DiskDataLoader(
         pipeline=DISK_PIPELINE,
         classes=DISK_CLASSES_FULL_NPY,
@@ -88,6 +112,9 @@ def test_load_dataset_all_classes_npy():
 
 
 def test_load_dataset_some_classes():
+    """
+    Test case for loading a dataset with some specific classes using DiskDataLoader.
+    """
     test_loader = DiskDataLoader(
         pipeline=DISK_PIPELINE,
         classes=DISK_CLASSES_SOME_MRC,
@@ -100,6 +127,9 @@ def test_load_dataset_some_classes():
 
 
 def test_load_dataset_missing_class():
+    """
+    Test case for loading dataset with missing classes.
+    """
     test_loader = DiskDataLoader(
         pipeline=DISK_PIPELINE,
         classes=DISK_CLASSES_MISSING_MRC,
@@ -110,6 +140,11 @@ def test_load_dataset_missing_class():
 
 
 def test_one_image():
+    """
+    Test case for loading one image using DiskDataLoader.
+
+    This test case verifies that the loaded image is of the correct class and type.
+    """
     test_loader = DiskDataLoader(
         pipeline=DISK_PIPELINE, classes=DISK_CLASSES_NONE, dataset_size=DATASET_SIZE_ALL
     )
@@ -121,6 +156,9 @@ def test_one_image():
 
 
 def test_get_loader_training_false():
+    """
+    Test case for the `get_loader` method of the `DiskDataLoader` class when `training` is set to False.
+    """
     test_loader = DiskDataLoader(
         pipeline=DISK_PIPELINE,
         classes=DISK_CLASSES_FULL_MRC,
@@ -133,6 +171,9 @@ def test_get_loader_training_false():
 
 
 def test_get_loader_training_true():
+    """
+    Test case for the `get_loader` method of the `DiskDataLoader` class when training is set to True.
+    """
     test_loader = DiskDataLoader(
         pipeline=DISK_PIPELINE,
         classes=DISK_CLASSES_FULL_MRC,
@@ -148,6 +189,11 @@ def test_get_loader_training_true():
 
 
 def test_get_loader_training_fail():
+    """
+    Test case for the `get_loader` method of the `DiskDataLoader` class when training fails.
+
+    This test case verifies that an exception is raised when the dataset size is smaller than the split size.
+    """
     test_loader = DiskDataLoader(
         pipeline=DISK_PIPELINE,
         classes=DISK_CLASSES_FULL_MRC,
@@ -162,6 +208,15 @@ def test_get_loader_training_fail():
 
 
 def test_processing_data_all_transforms():
+    """
+    Test the processing of data with all transforms applied.
+
+    This function creates a DiskDataLoader object with a specified pipeline, classes, dataset size,
+    training flag, and all available transformations. It then loads the data from a specified datapath and datatype.
+    The function asserts that the dataset has the expected normalization, shiftmin, and gaussianblur
+    transforms applied. It also checks the dimensions of the loaded image and asserts that the label
+    is one of the expected classes.
+    """
     test_loader = DiskDataLoader(
         pipeline=DISK_PIPELINE,
         classes=DISK_CLASSES_FULL_MRC,
@@ -180,6 +235,13 @@ def test_processing_data_all_transforms():
 
 
 def test_processing_data_some_transforms_npy():
+    """
+    Test case for processing data with some transformations using the DiskDataLoader class.
+
+    This test case verifies that the DiskDataLoader correctly loads and processes data
+    with some specified transformations. It checks that the loaded dataset has the expected
+    properties and that the transformed images have the correct dimensions.
+    """
     test_loader_transf = DiskDataLoader(
         pipeline=DISK_PIPELINE,
         classes=DISK_CLASSES_FULL_NPY,
@@ -211,6 +273,13 @@ def test_processing_data_some_transforms_npy():
 
 
 def test_processing_data_rescale():
+    """
+    Test the processing of data with rescaling.
+
+    This function creates a DiskDataLoader object with rescaling transformations
+    and verifies that the dataset is loaded correctly. It then asserts various
+    properties of the dataset and performs additional checks on the loaded data.
+    """
     test_loader = DiskDataLoader(
         pipeline=DISK_PIPELINE,
         classes=DISK_CLASSES_FULL_MRC,
@@ -247,6 +316,9 @@ def test_processing_data_rescale():
 
 
 def test_processing_after_load():
+    """
+    Test the processing steps after loading data using DiskDataLoader.
+    """
     test_loader = DiskDataLoader(
         pipeline=DISK_PIPELINE,
         classes=DISK_CLASSES_FULL_MRC,

@@ -29,6 +29,38 @@ class DiskDataLoader(AbstractDataLoader):
         pipeline: str = "disk",
         transformations: str | None = None,
     ) -> None:
+        """
+        DataLoader implementation for loading data from disk.
+
+        Args:
+            dataset_size (int | None, optional): The maximum number of samples to load from the dataset. If None, load all samples. Default is None.
+            save_to_disk (bool, optional): Whether to save the loaded data to disk. Default is False.
+            training (bool, optional): Whether the DataLoader is used for training. Default is True.
+            classes (list[str] | None, optional): A list of classes to load from the dataset. If None, load all classes. Default is None.
+            pipeline (str, optional): The data loading pipeline to use. Default is "disk".
+            transformations (str | None, optional): The data transformations to apply. If None, no transformations are applied. Default is None.
+
+        Raises:
+            RuntimeError: If not all classes in the list are present in the directory.
+            RuntimeError: If no processing is required because no transformations were provided.
+            RuntimeError: If split size is not provided for training.
+            RuntimeError: If train and validation sets are smaller than 2 samples.
+
+        Attributes:
+            dataset_size (int | None): The maximum number of samples to load from the dataset.
+            save_to_disk (bool): Whether to save the loaded data to disk.
+            training (bool): Whether the DataLoader is used for training.
+            classes (list[str]): A list of classes to load from the dataset.
+            pipeline (str): The data loading pipeline to use.
+            transformations (str | None): The data transformations to apply.
+            debug (bool): Whether to enable debug mode.
+            dataset (DiskDataset): The loaded dataset.
+
+        Methods:
+            load(datapath, datatype): Load the data from the specified path and data type.
+            process(paths, datatype): Process the loaded data with the specified transformations.
+            get_loader(batch_size, split_size): Get the data loader for training or testing.
+        """
         self.dataset_size = dataset_size
         self.save_to_disk = save_to_disk
         self.training = training
@@ -42,6 +74,16 @@ class DiskDataLoader(AbstractDataLoader):
             self.classes = classes
 
     def load(self, datapath, datatype) -> None:
+        """
+        Load the data from the specified path and data type.
+
+        Args:
+            datapath (str): The path to the directory containing the data.
+            datatype (str): The type of data to load.
+
+        Returns:
+            None
+        """
         paths = [f for f in os.listdir(datapath) if "." + datatype in f]
 
         if not self.debug:
@@ -83,6 +125,19 @@ class DiskDataLoader(AbstractDataLoader):
             self.dataset = self.process(paths=paths, datatype=datatype)
 
     def process(self, paths: list[str], datatype: str):
+        """
+        Process the loaded data with the specified transformations.
+
+        Args:
+            paths (list[str]): List of file paths to the data.
+            datatype (str): Type of data being processed.
+
+        Returns:
+            DiskDataset: Processed dataset object.
+
+        Raises:
+            RuntimeError: If no transformations were provided.
+        """
         if self.transformations is None:
             msg = "No processing to do as no transformations were provided."
             raise RuntimeError(msg)
@@ -105,6 +160,22 @@ class DiskDataLoader(AbstractDataLoader):
         )
 
     def get_loader(self, batch_size: int, split_size: float | None = None):
+        """
+        Retrieve the data loader.
+
+        Args:
+            batch_size (int): The batch size for the data loader.
+            split_size (float | None, optional): The percentage of data to be used for validation set.
+                If None, the entire dataset will be used for training. Defaults to None.
+
+        Returns:
+            DataLoader or Tuple[DataLoader, DataLoader]: The data loader(s) for testing or training/validation, according to whether training is True or False.
+
+        Raises:
+            RuntimeError: If split_size is None and the method is called for training.
+            RuntimeError: If the train and validation sets are smaller than 2 samples.
+
+        """
         if self.training:
             if split_size is None:
                 msg = "Split size must be provided for training. "
@@ -146,6 +217,19 @@ class DiskDataLoader(AbstractDataLoader):
 
 
 class DiskDataset(AbstractDataset):
+    """
+    A dataset class for loading data from disk.
+
+    Args:
+        paths (list[str]): List of file paths.
+        datatype (str, optional): Type of data to load. Defaults to "npy".
+        rescale (int, optional): Rescale factor for the data. Defaults to 0.
+        shiftmin (bool, optional): Whether to shift the minimum value of the data. Defaults to False.
+        gaussianblur (bool, optional): Whether to apply Gaussian blur to the data. Defaults to False.
+        normalise (bool, optional): Whether to normalise the data. Defaults to False.
+        input_transform (typing.Any, optional): Additional input transformation. Defaults to None.
+    """
+
     def __init__(
         self,
         paths: list[str],
@@ -182,6 +266,18 @@ class DiskDataset(AbstractDataset):
         return x, y
 
     def read(self, filename):
+        """
+        Read data from file.
+
+        Args:
+            filename (str): File path.
+
+        Returns:
+            np.ndarray: Loaded data.
+
+        Raises:
+            RuntimeError: If the data type is not supported. Currently supported: .mrc, .npy
+        """
         if self.datatype == "npy":
             return np.load(filename)
 
@@ -194,6 +290,15 @@ class DiskDataset(AbstractDataset):
             raise RuntimeError(msg)
 
     def transformation(self, x):
+        """
+        Apply transformations to the input data.
+
+        Args:
+            x (np.ndarray): Input data.
+
+        Returns:
+            torch.Tensor: Transformed data.
+        """
         if self.rescale:
             x = np.asarray(x, dtype=np.float32)
             sh = tuple([self.rescale / s for s in x.shape])
