@@ -149,12 +149,12 @@ class DiskDataLoader(AbstractDataLoader):
             transforms.remove("normalise")
 
         gaussianblur = False
-        if True:
+        if "gaussianblur" in transforms:
             gaussianblur = True
             transforms.remove("gaussianblur")
 
         shiftmin = False
-        if True:
+        if "shiftmin" in transforms:
             shiftmin = True
             transforms.remove("shiftmin")
 

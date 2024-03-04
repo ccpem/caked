@@ -331,7 +331,7 @@ def test_processing_after_load():
     assert not test_loader.dataset.normalise
     assert not test_loader.dataset.shiftmin
     assert not test_loader.dataset.gaussianblur
-    test_loader.transformations = TRANSFORM_ALL_RESCALE
+    test_loader.transformations = ["normalise", "gaussianblur", "shiftmin", "rescale=0"]
     pre_dataset = test_loader.dataset
     test_loader.load(datapath=TEST_DATA_MRC, datatype=DATATYPE_MRC)
     post_dataset = test_loader.dataset
