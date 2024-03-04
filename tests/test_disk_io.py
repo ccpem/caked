@@ -25,10 +25,10 @@ DISK_CLASSES_MISSING_NPY = ["2", "a", "1"]
 DISK_CLASSES_NONE = None
 DATATYPE_MRC = "mrc"
 DATATYPE_NPY = "npy"
-TRANSFORM_ALL = "normalise,gaussianblur,shiftmin"
-TRANSFORM_ALL_RESCALE = "normalise,gaussianblur,shiftmin,rescale=0"
-TRANSFORM_SOME = "normalise,gaussianblur"
-TRANSFORM_RESCALE = "rescale=32"
+TRANSFORM_ALL = ["normalise", "gaussianblur", "shiftmin"]
+TRANSFORM_ALL_RESCALE = ["normalise", "gaussianblur", "shiftmin", "rescale=0"]
+TRANSFORM_SOME = ["normalise", "gaussianblur"]
+TRANSFORM_RESCALE = ["rescale=32"]
 
 
 def test_class_instantiation():

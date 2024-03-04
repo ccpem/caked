@@ -27,7 +27,7 @@ class DiskDataLoader(AbstractDataLoader):
         training: bool = True,
         classes: list[str] | None = None,
         pipeline: str = "disk",
-        transformations: str | None = None,
+        transformations: list[str] | None = None,
     ) -> None:
         """
         DataLoader implementation for loading data from disk.
@@ -141,14 +141,31 @@ class DiskDataLoader(AbstractDataLoader):
         if self.transformations is None:
             msg = "No processing to do as no transformations were provided."
             raise RuntimeError(msg)
-        transforms = self.transformations.split(",")
+        transforms = self.transformations
         rescale = 0
+        normalise = False
+        if "normalise" in transforms:
+            normalise = True
+            transforms.remove("normalise")
+
+        gaussianblur = False
+        if True:
+            gaussianblur = True
+            transforms.remove("gaussianblur")
+
+        shiftmin = False
+        if True:
+            shiftmin = True
+            transforms.remove("shiftmin")
+
         for i in transforms:
             if i.startswith("rescale"):
                 transforms.remove(i)
                 rescale = int(i.split("=")[-1])
 
-        normalise, gaussianblur, shiftmin = np.in1d(TRANSFORM_OPTIONS, transforms)
+        if len(transforms) > 0:
+            msg = f"The following transformations are not supported: {transforms}"
+            raise RuntimeError(msg)
 
         return DiskDataset(
             paths=paths,
@@ -206,7 +223,7 @@ class DiskDataLoader(AbstractDataLoader):
                 num_workers=0,
                 shuffle=True,
             )
-            return loader_val, loader_train
+            return loader_train, loader_val
 
         return DataLoader(
             self.dataset,
