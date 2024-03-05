@@ -141,7 +141,7 @@ class DiskDataLoader(AbstractDataLoader):
         if self.transformations is None:
             msg = "No processing to do as no transformations were provided."
             raise RuntimeError(msg)
-        transforms = self.transformations
+        transforms = list(self.transformations)
         rescale = 0
         normalise = False
         if "normalise" in transforms:
