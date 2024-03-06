@@ -343,3 +343,26 @@ def test_processing_after_load():
     post_image, post_label = next(iter(post_dataset))
     assert pre_label == post_label
     assert not torch.equal(pre_image, post_image)
+
+
+def test_drop_last():
+    """
+    Test the drop_last parameter in the get_loader method of the DiskDataLoader class.
+    """
+    test_loader = DiskDataLoader(
+        pipeline=DISK_PIPELINE,
+        classes=DISK_CLASSES_FULL_MRC,
+        dataset_size=DATASET_SIZE_ALL,
+        training=True,
+    )
+    test_loader.load(datapath=TEST_DATA_MRC, datatype=DATATYPE_MRC)
+    loader_train_true, loader_val_true = test_loader.get_loader(
+        split_size=0.7, batch_size=64, no_val_drop=True
+    )
+    assert loader_train_true.drop_last
+    assert not loader_val_true.drop_last
+    loader_train_false, loader_val_false = test_loader.get_loader(
+        split_size=0.7, batch_size=64, no_val_drop=False
+    )
+    assert loader_train_false.drop_last
+    assert loader_val_false.drop_last
