@@ -176,7 +176,12 @@ class DiskDataLoader(AbstractDataLoader):
             shiftmin=shiftmin,
         )
 
-    def get_loader(self, batch_size: int, split_size: float | None = None):
+    def get_loader(
+        self,
+        batch_size: int,
+        split_size: float | None = None,
+        no_val_drop: bool = False,
+    ):
         """
         Retrieve the data loader.
 
@@ -184,6 +189,7 @@ class DiskDataLoader(AbstractDataLoader):
             batch_size (int): The batch size for the data loader.
             split_size (float | None, optional): The percentage of data to be used for validation set.
                 If None, the entire dataset will be used for training. Defaults to None.
+            no_val_drop (bool, optional): If True, the last batch of validation data will not be dropped if it is smaller than batch size. Defaults to False.
 
         Returns:
             DataLoader or Tuple[DataLoader, DataLoader]: The data loader(s) for testing or training/validation, according to whether training is True or False.
@@ -216,12 +222,14 @@ class DiskDataLoader(AbstractDataLoader):
                 batch_size=batch_size,
                 num_workers=0,
                 shuffle=True,
+                drop_last=True,
             )
             loader_val = DataLoader(
                 val_data,
                 batch_size=batch_size,
                 num_workers=0,
                 shuffle=True,
+                drop_last=(not no_val_drop),
             )
             return loader_train, loader_val
 
