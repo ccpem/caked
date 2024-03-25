@@ -10,7 +10,8 @@ class.
 
 The DiskDataLoader and DiskDataset classes were initially developed for
 [Affinity-VAE](https://github.com/alan-turing-institute/affinity-vae) by Marjan
-Famili, Jola Mirecka and Camila Rangel-Smith.
+Famili, Jola Mirecka and Camila Rangel-Smith. These authors have also prepared
+and curated the corresponding test data.
 
 ## Installation
 
@@ -38,6 +39,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on how to contribute.
 ## License
 
 Distributed under the terms of the [MIT license](LICENSE).
+
+This packaged was based on this very useful and well built
+[project template](https://github.com/alan-turing-institute/python-project-template).
 
 <!-- prettier-ignore-start -->
 [actions-badge]:            https://github.com/alan-turing-institute/CAKED/workflows/CI/badge.svg
