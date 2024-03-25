@@ -4,7 +4,13 @@
 [![PyPI version][pypi-version]][pypi-link]
 [![PyPI platforms][pypi-platforms]][pypi-link]
 
-A dataloader abstract package
+A package to load tomograms and subtomograms from different sources into a
+[PyTorch DataLoader](https://pytorch.org/docs/stable/data.html#torch.utils.data.DataLoader)
+class.
+
+The DiskDataLoader and DiskDataset classes were initially developed for
+[Affinity-VAE](https://github.com/alan-turing-institute/affinity-vae) by Marjan
+Famili, Jola Mirecka and Camila Rangel-Smith.
 
 ## Installation
 

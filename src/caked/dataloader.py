@@ -1,3 +1,8 @@
+"""
+Functions for loading the data from disk.
+Largely taken from https://github.com/alan-turing-institute/affinity-vae
+"""
+
 from __future__ import annotations
 
 import logging
