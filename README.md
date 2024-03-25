@@ -10,8 +10,9 @@ class.
 
 The DiskDataLoader and DiskDataset classes were initially developed for
 [Affinity-VAE](https://github.com/alan-turing-institute/affinity-vae) by Marjan
-Famili, Jola Mirecka and Camila Rangel-Smith. These authors have also prepared
-and curated the corresponding test data.
+Famili (@marjanfamili), Jola Mirecka (@jolaem) and Camila Rangel-Smith
+(@crangelsmith). These authors have also prepared and curated the corresponding
+test data.
 
 ## Installation
 
