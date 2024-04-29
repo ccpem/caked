@@ -12,6 +12,7 @@ from caked.dataloader import DiskDataLoader, DiskDataset
 ORIG_DIR = Path.cwd()
 TEST_DATA_MRC = Path(testdata_mrc.__file__).parent
 TEST_DATA_NPY = Path(testdata_npy.__file__).parent
+TEST_CORRUPT = Path(__file__).parent / "corrupt.mrc"
 DISK_PIPELINE = "disk"
 DATASET_SIZE_ALL = None
 DATASET_SIZE_SOME = 3
@@ -366,3 +367,13 @@ def test_drop_last():
     )
     assert loader_train_false.drop_last
     assert loader_val_false.drop_last
+
+
+def test_corrupt_mrcfile():
+    """
+    Test that corrupt mrcfiles are not loaded and throw an exception.
+    """
+    test_dataset = DiskDataset(paths=TEST_DATA_MRC, datatype=DATATYPE_MRC)
+    assert isinstance(test_dataset, DiskDataset)
+    with pytest.raises(Exception, match=r".* corrupted."):
+        test_dataset.read(TEST_CORRUPT)

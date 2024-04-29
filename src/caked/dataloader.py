@@ -312,8 +312,12 @@ class DiskDataset(AbstractDataset):
             return np.load(filename)
 
         if self.datatype == "mrc":
-            with mrcfile.open(filename) as f:
-                return np.array(f.data)
+            try:
+                with mrcfile.open(filename) as f:
+                    return np.array(f.data)
+            except ValueError as exc:
+                msg = f"File {filename} is corrupted."
+                raise ValueError(msg) from exc
 
         else:
             msg = "Currently we only support mrcfile and numpy arrays."
