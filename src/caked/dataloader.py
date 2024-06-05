@@ -166,7 +166,7 @@ class DiskDataLoader(AbstractDataLoader):
         for i in transforms:
             if i.startswith("rescale"):
                 transforms.remove(i)
-                rescale = int(i.split("=")[-1])
+                rescale = int(float(i.split("=")[-1]))
 
         if len(transforms) > 0:
             msg = f"The following transformations are not supported: {transforms}"
