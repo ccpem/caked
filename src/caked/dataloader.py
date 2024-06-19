@@ -14,9 +14,13 @@ from pathlib import Path
 import mrcfile
 import numpy as np
 import torch
+from ccpem_utils.map.parse_mrcmapobj import get_mapobjhandle
 from scipy.ndimage import zoom
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import ConcatDataset, DataLoader, Subset
 from torchvision import transforms
+
+from caked.Transforms.augments import ComposeAugment
+from caked.Transforms.transforms import ComposeTransform, DecomposeToSlices, Transforms
 
 from .base import AbstractDataLoader, AbstractDataset
 
@@ -246,6 +250,255 @@ class DiskDataLoader(AbstractDataLoader):
         )
 
 
+class MapDataLoader(AbstractDataLoader):
+    def __init__(
+        self,
+        dataset_size: int | None = None,
+        save_to_disk: bool = False,
+        training: bool = True,
+        classes: list[str] | None = None,
+        pipeline: str = "disk",
+        transformations: list[str] | None = None,
+        augmentations: list[str] | None = None,
+    ) -> None:
+        """
+        DataLoader implementation for loading map data from disk.
+        """
+        self.dataset_size = dataset_size
+        self.save_to_disk = save_to_disk
+        self.training = training
+        self.pipeline = pipeline
+        self.transformations = transformations
+        self.augmentations = augmentations
+        self.debug = False
+        self.classes = classes
+
+        if self.classes is None:
+            self.classes = []
+        if self.transformations is None:
+            self.transformations = []
+        if self.augmentations is None:
+            self.augmentations = []
+
+    def __add__(self, other):
+        if not isinstance(other, MapDataLoader):
+            msg = "Can only add two MapDataLoader objects together."
+            raise TypeError(msg)
+        if self.pipeline != other.pipeline:
+            msg = "Both MapDataLoader objects must use the same pipeline."
+            raise ValueError(msg)
+        if self.transformations != other.transformations:
+            msg = "Both MapDataLoader objects must use the same transformations."
+            raise ValueError(msg)
+        if self.augmentations != other.augmentations:
+            msg = "Both MapDataLoader objects must use the same augmentations."
+            raise ValueError(msg)
+        if self.classes != other.classes:
+            msg = "Both MapDataLoader objects must use the same classes."
+            raise ValueError(msg)
+        if self.dataset_size != other.dataset_size:
+            msg = "Both MapDataLoader objects must use the same dataset size."
+            raise ValueError(msg)
+        if self.save_to_disk != other.save_to_disk:
+            msg = "Both MapDataLoader objects must use the same save to disk option."
+            raise ValueError(msg)
+        if self.training != other.training:
+            msg = "Both MapDataLoader objects must use the same training option."
+            raise ValueError(msg)
+
+        new_loader = MapDataLoader(
+            dataset_size=self.dataset_size,
+            save_to_disk=self.save_to_disk,
+            training=self.training,
+            classes=self.classes,
+            pipeline=self.pipeline,
+            transformations=self.transformations,
+            augmentations=self.augmentations,
+        )
+        new_loader.dataset = ConcatDataset([self.dataset, other.dataset])
+        return new_loader
+
+    def load(self, datapath, datatype, label_path=None, weight_path=None) -> None:
+        """
+        Load the data from the specified path and data type.
+
+        Args:
+            datapath (str): The path to the directory containing the data.
+            datatype (str): The type of data to load.
+
+        Returns:
+            None
+        """
+        paths = list(Path(datapath).rglob(f"*.{datatype}"))
+        label_paths = (
+            list(Path(label_path).rglob(f"*.{datatype}"))
+            if label_path is not None
+            else None
+        )
+        weight_paths = (
+            list(Path(weight_path).rglob(f"*.{datatype}"))
+            if weight_path is not None
+            else None
+        )
+
+        if not self.debug:
+            random.shuffle(paths)
+
+        # ids right now depend on the data being saved with a certain format (id in the first part of the name, separated by _)
+        # TODO: make this more general/document in the README
+        ids = np.unique([file.name.split("_")[0] for file in paths])
+        if len(self.classes) == 0:
+            self.classes = ids
+        else:
+            class_check = np.in1d(self.classes, ids)
+            if not np.all(class_check):
+                msg = "Not all classes in the list are present in the directory. Missing classes: {}".format(
+                    np.asarray(self.classes)[~class_check]
+                )
+                raise RuntimeError(msg)
+            class_check = np.in1d(ids, self.classes)
+            if not np.all(class_check):
+                logging.basicConfig(format="%(message)s", level=logging.INFO)
+                logging.info(
+                    "Not all classes in the directory are present in the "
+                    "classes list. Missing classes: %s. They will be ignored.",
+                    (np.asarray(ids)[~class_check]),
+                )
+
+        paths = [
+            Path(datapath) / p.name
+            for p in paths
+            for c in self.classes
+            if c in p.name.split("_")[0]
+        ]
+        label_paths = (
+            [
+                Path(label_path) / p.name
+                for p in label_paths
+                for c in self.classes
+                if c in p.name.split("_")[0]
+            ]
+            if label_path is not None
+            else None
+        )
+        weight_paths = (
+            [
+                Path(weight_path) / p.name
+                for p in weight_paths
+                for c in self.classes
+                if c in p.name.split("_")[0]
+            ]
+            if weight_path is not None
+            else None
+        )
+        if self.dataset_size is not None:
+            paths = paths[: self.dataset_size]
+
+        if label_paths is not None and len(label_paths) != len(paths):
+            msg = "Label paths and data paths do not match."
+            raise RuntimeError(msg)
+        if weight_paths is not None and len(weight_paths) != len(paths):
+            msg = "Weight paths and data paths do not match."
+            raise RuntimeError(msg)
+        label_paths = label_paths if label_paths is not None else [None] * len(paths)
+        weight_paths = weight_paths if weight_paths is not None else [None] * len(paths)
+        self.dataset = ConcatDataset(
+            [
+                MapDataset(
+                    path=path,
+                    label_path=label_path,
+                    weight_path=weight_path,
+                    transforms=self.transformations,
+                    augments=self.augmentations,
+                )
+                for path, label_path, weight_path in zip(
+                    paths, label_paths, weight_paths
+                )
+            ]
+        )
+
+    def process(self, paths: list[str], datatype: str):
+        """
+        Process the loaded data with the specified transformations.
+
+        Args:
+            paths (list[str]): List of file paths to the data.
+            datatype (str): Type of data being processed.
+
+        Returns:
+            DiskDataset: Processed dataset object.
+
+        Raises:
+            RuntimeError: If no transformations were provided.
+        """
+
+        raise NotImplementedError
+
+    def get_loader(
+        self,
+        batch_size: int,
+        split_size: float | None = None,
+        no_val_drop: bool = False,
+    ):
+        """
+        Retrieve the data loader.
+
+        Args:
+            batch_size (int): The batch size for the data loader.
+            split_size (float | None, optional): The percentage of data to be used for validation set.
+                If None, the entire dataset will be used for training. Defaults to None.
+            no_val_drop (bool, optional): If True, the last batch of validation data will not be dropped if it is smaller than batch size. Defaults to False.
+
+        Returns:
+            DataLoader or Tuple[DataLoader, DataLoader]: The data loader(s) for testing or training/validation, according to whether training is True or False.
+
+        Raises:
+            RuntimeError: If split_size is None and the method is called for training.
+            RuntimeError: If the train and validation sets are smaller than 2 samples.
+
+        """
+        if self.training:
+            if split_size is None:
+                msg = "Split size must be provided for training. "
+                raise RuntimeError(msg)
+            # split into train / val sets
+            idx = np.random.permutation(len(self.dataset))
+            if split_size < 1:
+                split_size = split_size * 100
+
+            s = int(np.ceil(len(self.dataset) * int(split_size) / 100))
+            if s < 2:
+                msg = "Train and validation sets must be larger than 1 sample, train: {}, val: {}.".format(
+                    len(idx[:-s]), len(idx[-s:])
+                )
+                raise RuntimeError(msg)
+            train_data = Subset(self.dataset, indices=idx[:-s])
+            val_data = Subset(self.dataset, indices=idx[-s:])
+
+            loader_train = DataLoader(
+                train_data,
+                batch_size=batch_size,
+                num_workers=0,
+                shuffle=True,
+                drop_last=True,
+            )
+            loader_val = DataLoader(
+                val_data,
+                batch_size=batch_size,
+                num_workers=0,
+                shuffle=True,
+                drop_last=(not no_val_drop),
+            )
+            return loader_train, loader_val
+
+        return DataLoader(
+            self.dataset,
+            batch_size=batch_size,
+            num_workers=0,
+            shuffle=True,
+        )
+
+
 class DiskDataset(AbstractDataset):
     """
     A dataset class for loading data from disk.
@@ -361,3 +614,169 @@ class DiskDataset(AbstractDataset):
 
     def augment(self, augment):
         raise NotImplementedError
+
+
+class MapDataset(AbstractDataset):
+    """
+    A dataset class for loading map data, alongside the corresponding class labels and weights.
+    The map data is loaded from the disk and is decomposed into a set of tiles. These tiles are
+    then reuturned when indexing the dataset.
+
+    Args:
+
+    Note: I'm not sure if shuffling will be used but the method I'm currently using will lazily
+    load the data from disk so the map file will be loadeded, transformed and then the tile
+    will be extracted. It might be good to include a cache option to store map data in memory.
+    This could be useful to reduce the number of times the map data is loaded from disk...
+    Perhaps saving them as hdf5 files would be a good idea?
+    """
+
+    def __init__(
+        self,
+        path: str | Path,
+        label_path: str | Path | None = None,
+        weight_path: str | Path | None = None,
+        transforms: list[str] | None = None,
+        augments: list[str] | None = None,
+        decompose_kwargs: dict[str, int] | None = None,
+    ) -> None:
+        self.path = Path(path)
+        self.label_path = Path(label_path) if label_path is not None else None
+        self.weight_path = Path(weight_path) if weight_path is not None else None
+        self.mapobj = None
+        self.label_mapobj = None
+        self.weight_mapobj = None
+        self.slices = None
+        self.tiles = None
+        self.tiles_count: int = 0
+        self.transforms = transforms
+        self.augments = augments
+        if decompose_kwargs is None:
+            decompose_kwargs = {"cshape": 64, "margin": 8}
+
+    def __len__(self):
+        # TODO: The tile counts need to be calculated before __getitem__ is called
+        # The amount of tiles is linked to the transformations applied to the map data
+        # This would mean the best place to calculate the tile count would be in the __init__
+        # method and subsequently the transform method would need to be called there too
+        return self.tiles_count
+
+    def __getitem__(
+        self, idx
+    ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+        # start by loading the map data
+        self.load_map_objects()
+
+        transforms_keywords = self.transform()
+        _ = self.augment()
+        # SEND TO HDF5 FILE to be saved, some will be duplicates so need to keep track of the duplicates
+
+        if (self.slices is None) or (self.tiles is None):
+            decompose = DecomposeToSlices(
+                self.mapobj,
+                step=transforms_keywords.get("step"),
+                cshape=transforms_keywords.get("cshape"),
+                margin=transforms_keywords.get("margin"),
+            )  # TODO: move this
+            self.slices = decompose.slices
+            self.tiles = decompose.tiles
+            self.tiles_count = len(self.tiles)
+
+        map_slice = self.mapobj.data[self.slices[idx]]
+        label_slice = (
+            self.label_mapobj.data[self.slices[idx]]
+            if self.label_mapobj is not None
+            else None
+        )
+        weight_slice = (
+            self.weight_mapobj.data[self.slices[idx]]
+            if self.weight_mapobj is not None
+            else None
+        )
+
+        # Close the map objects
+        self.close_map_objects()
+
+        return (
+            torch.tensor(map_slice),
+            torch.tensor(label_slice) if label_slice is not None else None,
+            torch.tensor(weight_slice) if weight_slice is not None else None,
+        )
+
+    def _transform_keywords_builder(self):
+        keywords = {}
+        keywords.update(self.decompose_kwargs)
+        keywords["step"] = self.decompose_kwargs.get(
+            "step", (keywords.get("cshape") - (2 * keywords.get("margin")))
+        )
+        for transform in self.transforms:
+            if transform == Transforms.MASKCROP.value:
+                keywords["mask"] = self.label_mapobj
+            if transform == Transforms.NORM.value:
+                keywords["ext_dim"] = (0, 0, 0)
+                keywords["fill_padding"] = (0, 0, 0)
+            if transform == Transforms.VOXNORM.value:
+                keywords["vox"] = self.decompose_kwargs.get("vox", 1.0)
+                keywords["vox_lim"] = self.decompose_kwargs.get("vox_lim", (0.95, 1.05))
+
+        return keywords
+
+    def _augment_keywords_builder(self):
+        keywords = {}
+        for augment in self.augments:
+            if augment.__class__.__name__ == "RandomRotationAugment":
+                keywords["ax"] = self.ax
+                keywords["an"] = self.an
+
+        return keywords
+
+    def load_map_objects(
+        self,
+    ) -> None:
+        self.mapobj = get_mapobjhandle(self.path)
+        if self.label_path is not None:
+            if not self.label_path.exists():
+                msg = f"Label file {self.label_path} not found."
+                raise FileNotFoundError(msg)
+            self.label_mapobj = get_mapobjhandle(self.label_path)
+        if self.weight_path is not None:
+            if not self.weight_path.exists():
+                msg = f"Weight file {self.weight_path} not found."
+                raise FileNotFoundError(msg)
+            self.weight_mapobj = get_mapobjhandle(self.weight_path)
+
+    def close_map_objects(self, *args):
+        for arg in args:
+            if arg is not None:
+                arg.close()
+
+    def augment(self) -> None:
+        augment_kwargs = self._augment_keywords_builder()
+        augment_kwargs["retall"] = True
+        if len(self.augments) == 0:
+            return {}
+
+        self.mapobj, extra_kwargs = ComposeAugment(self.augments)(
+            self.mapobj, **augment_kwargs
+        )
+        augment_kwargs["retall"] = False
+        augment_kwargs.update(
+            extra_kwargs
+        )  # update the kwargs with the returned values
+
+        self.label_mapobj = ComposeAugment(self.augments)(
+            self.label_mapobj, **augment_kwargs
+        )
+        self.weight_mapobj = ComposeAugment(self.augments)(
+            self.weight_mapobj, **augment_kwargs
+        )
+
+        return augment_kwargs
+
+    def transform(self) -> dict:
+        # TODO: Need to see if same transforms are applied to all map objects, maybe just voxel space normalisation
+        transform_kwargs = self._transform_keywords_builder()
+        if len(self.transforms) == 0:
+            return transform_kwargs
+
+        return ComposeTransform(self.transforms)(self.mapobj, **transform_kwargs)
