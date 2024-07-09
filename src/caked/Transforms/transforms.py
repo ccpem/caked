@@ -9,12 +9,15 @@ from ccpem_utils.map.mrc_map_utils import (
 from ccpem_utils.map.parse_mrcmapobj import MapObjHandle
 from mlproteintoolbox.proteins.map_utils import voxel_normalisation
 
-from .base import MapObjTransformBase
+from .base import TransformBase
 from .utils import divx, mask_from_labelobj, pad_map_grid_sample
 
 
 class Transforms(Enum):
-    """ """
+    """
+    Enum class for transformations.
+
+    """
 
     VOXNORM = "voxnorm"
     NORM = "norm"
@@ -22,8 +25,14 @@ class Transforms(Enum):
     PADDING = "padding"
 
 
-def get_transform(transform: str) -> MapObjTransformBase:
-    """ """
+def get_transform(transform: str) -> TransformBase:
+    """
+    Get the transformation object.
+
+    :param transform: (str) transformation to apply
+
+    :return: (MapObjHandle) transformed MapObjHandle
+    """
 
     if transform == Transforms.VOXNORM.value:
         return MapObjectVoxelNormalisation()
@@ -33,7 +42,7 @@ def get_transform(transform: str) -> MapObjTransformBase:
         return MapObjectMaskCrop()
     if transform == Transforms.PADDING.value:
         return MapObjectPadding()
-    msg = f"Unknown transform: {transform}"
+    msg = f"Unknown transform: {transform}, please choose from {Transforms.__members__}"
     raise ValueError(msg)
 
 
@@ -62,13 +71,13 @@ class ComposeTransform:
 class DecomposeToSlices:
     """ """
 
-    def __init__(self, mapobj: MapObjHandle, **kwargs):
+    def __init__(self, map_shape: tuple, **kwargs):
         step = kwargs.get("step", 1)
         cshape = kwargs.get("cshape", 1)
         slices, tiles = [], []
-        for i in range(0, mapobj.data.shape[0], step):
-            for j in range(0, mapobj.data.shape[1], step):
-                for k in range(0, mapobj.data.shape[2], step):
+        for i in range(0, map_shape[0], step):
+            for j in range(0, map_shape[1], step):
+                for k in range(0, map_shape[2], step):
                     slices.append(
                         (
                             slice(i, i + cshape),
@@ -82,8 +91,11 @@ class DecomposeToSlices:
         self.tiles = tiles
 
 
-class MapObjectVoxelNormalisation(MapObjTransformBase):
-    """ """
+class MapObjectVoxelNormalisation(TransformBase):
+    """
+    Normalise the spacing of the voxels in a Map Object.
+
+    """
 
     def __init__(self):
         super().__init__()
@@ -107,9 +119,9 @@ class MapObjectVoxelNormalisation(MapObjTransformBase):
         return mapobj
 
 
-class MapObjectNormalisation(MapObjTransformBase):
+class MapObjectNormalisation(TransformBase):
     """
-    Normalise the voxel values of a 3D volume.
+    Normalise the voxel values of a Map Object.
 
     """
 
@@ -129,7 +141,7 @@ class MapObjectNormalisation(MapObjTransformBase):
         return mapobj
 
 
-class MapObjectMaskCrop(MapObjTransformBase):
+class MapObjectMaskCrop(TransformBase):
     """
     Crop a Map Object using a mask.
     """
@@ -153,8 +165,10 @@ class MapObjectMaskCrop(MapObjTransformBase):
         return mapobj
 
 
-class MapObjectPadding(MapObjTransformBase):
-    """ """
+class MapObjectPadding(TransformBase):
+    """
+    Pad a Map Object.
+    """
 
     def __init__(self):
         super().__init__()
