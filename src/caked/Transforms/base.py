@@ -37,22 +37,3 @@ class AugmentBase(ABC):
     def __call__(self, data, **kwargs):
         msg = "The __call__ method must be implemented in the subclass"
         raise NotImplementedError(msg)
-
-
-class MapObjTransformBase(TransformBase):
-    """
-    Base class for transformations that operate on MapObjHandle objects.
-
-    """
-
-    @abstractmethod
-    def __init__(self):
-        super().__init__()
-
-    def __call__(self, mapobj: MapObjHandle, **kwargs) -> MapObjHandle:
-        if not isinstance(mapobj, MapObjHandle):
-            msg = "mapobj must be an instance of MapObjHandle"
-            raise TypeError(msg)
-        # Proceed with the method implementation after the check
-        msg = "The __call__ method must be implemented in the subclass"
-        raise NotImplementedError(msg)
