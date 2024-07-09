@@ -1,20 +1,19 @@
 from __future__ import annotations
 
 import random
-from typing import Union
+from enum import Enum
 
 import numpy as np
 from ccpem_utils.map.array_utils import rotate_array
+from ccpem_utils.map.parse_mrcmapobj import MapObjHandle
 
 from .base import AugmentBase
-from enum import Enum
-from ccpem_utils.map.parse_mrcmapobj import MapObjHandle
 
 
 class Augments(Enum):
     """ """
 
-    RANDOMROT = "random"
+    RANDOMROT = "randrot"
     ROT90 = "rot90"
 
 
@@ -23,11 +22,11 @@ def get_augment(augment: str, random_seed) -> AugmentBase:
 
     if augment == Augments.RANDOMROT.value:
         return RandomRotationAugment(random_seed=random_seed)
-    elif augment == Augments.ROT90.value:
+    if augment == Augments.ROT90.value:
         return Rotation90Augment(random_seed=random_seed)
-    else:
-        msg = f"Unknown Augmentation: {augment}"
-        raise ValueError(msg)
+
+    msg = f"Unknown Augmentation: {augment}, please choose from {Augments.__members__}"
+    raise ValueError(msg)
 
 
 class ComposeAugment:
@@ -36,18 +35,22 @@ class ComposeAugment:
 
     :param augments: (list) list of augments to compose
 
-    :return: (MapObjHandle) transformed MapObjHandle
+    :return: (np.ndarrry) transformed array
     """
 
     def __init__(self, augments: list[str], random_seed: int = 42):
         self.random_seed = random_seed
         self.augments = augments
 
-    def __call__(self, mapobj: MapObjHandle, **kwargs) -> MapObjHandle:
+    def __call__(self, data: np.ndarray, **kwargs) -> MapObjHandle:
         for augment in self.augments:
-            mapobj = get_augment(augment, random_seed=self.random_seed)(
-                mapobj, **kwargs
+            data, augment_kwargs = get_augment(augment, random_seed=self.random_seed)(
+                data, **kwargs
             )
+
+            kwargs.update(augment_kwargs)
+
+        return data, kwargs
 
 
 class RandomRotationAugment(AugmentBase):
@@ -74,7 +77,6 @@ class RandomRotationAugment(AugmentBase):
         ax = kwargs.get("ax", None)
         an = kwargs.get("an", None)
         interp = kwargs.get("interp", True)
-        return_all = kwargs.get("return_all", False)
 
         if (ax is not None and an is None) or (ax is None and an is not None):
             msg = "When specifying rotation, please use both arguments to specify the axis and angle."
@@ -90,13 +92,9 @@ class RandomRotationAugment(AugmentBase):
             angle = an
 
         r = rotations[axes]
-
         data = rotate_array(data, angle, axes=r, interpolate=interp, reshape=False)
 
-        if return_all:
-            return data, {"ax": axes, "an": angle}
-
-        return data
+        return data, {"ax": axes, "an": angle}
 
 
 class Rotation90Augment(AugmentBase):
@@ -120,4 +118,5 @@ class Rotation90Augment(AugmentBase):
         data: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        raise NotImplementedError("Rotation90Augment not implemented yet.")
+        msg = "Rotation90Augment not implemented yet."
+        raise NotImplementedError(msg)
