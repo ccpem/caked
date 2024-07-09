@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
@@ -23,4 +25,19 @@ def test_corrupt_file():
     return Path(__file__).parent / "corrupt.mrc"
 
 
+@pytest.fixture(scope="session")
+def test_data_single_mrc_dir():
+    """Fixture to provide a single MRC file for testing."""
+    return Path(Path(__file__).parent.joinpath("testdata_mrc", "mrc"))
 
+
+@pytest.fixture()
+def test_data_single_mrc_temp_dir():
+    with TemporaryDirectory() as temp_dir:
+        temp_dir = Path(temp_dir)
+        test_data_single_mrc_dir = Path(
+            Path(__file__).parent.joinpath("testdata_mrc", "mrc")
+        )
+        for file in test_data_single_mrc_dir.glob("*"):
+            shutil.copy(file, temp_dir)
+        yield temp_dir
