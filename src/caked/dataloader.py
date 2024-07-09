@@ -9,22 +9,25 @@ import logging
 import os
 import random
 import typing
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import mrcfile
 import numpy as np
 import torch
-from ccpem_utils.map.parse_mrcmapobj import get_mapobjhandle
+from ccpem_utils.map.parse_mrcmapobj import MapObjHandle, get_mapobjhandle
+from ccpem_utils.other.utils import set_gpu
 from scipy.ndimage import zoom
 from torch.utils.data import ConcatDataset, DataLoader, Subset
 from torchvision import transforms
 
-from caked.hdf5_utils import HDF5DataStore
+from caked.base import AbstractDataLoader, AbstractDataset, DatasetConfig
+from caked.hdf5 import HDF5DataStore
 from caked.Transforms.augments import ComposeAugment
 from caked.Transforms.transforms import ComposeTransform, DecomposeToSlices, Transforms
-
-from .base import AbstractDataLoader, AbstractDataset
+from caked.utils import (
+    filter_and_construct_paths,
+    process_datasets,
+)
 
 np.random.seed(42)
 TRANSFORM_OPTIONS = ["normalise", "gaussianblur", "shiftmin"]
@@ -262,9 +265,11 @@ class MapDataLoader(AbstractDataLoader):
         pipeline: str = "disk",
         transformations: list[str] | None = None,
         augmentations: list[str] | None = None,
+        decompose: bool = True,
     ) -> None:
         """
         DataLoader implementation for loading map data from disk.
+
         """
         self.dataset_size = dataset_size
         self.save_to_disk = save_to_disk
@@ -272,6 +277,7 @@ class MapDataLoader(AbstractDataLoader):
         self.pipeline = pipeline
         self.transformations = transformations
         self.augmentations = augmentations
+        self.decompose = decompose
         self.debug = False
         self.classes = classes
 
@@ -282,61 +288,51 @@ class MapDataLoader(AbstractDataLoader):
         if self.augmentations is None:
             self.augmentations = []
 
-    def __add__(self, other):
-        if not isinstance(other, MapDataLoader):
-            msg = "Can only add two MapDataLoader objects together."
-            raise TypeError(msg)
-        if self.pipeline != other.pipeline:
-            msg = "Both MapDataLoader objects must use the same pipeline."
-            raise ValueError(msg)
-        if self.transformations != other.transformations:
-            msg = "Both MapDataLoader objects must use the same transformations."
-            raise ValueError(msg)
-        if self.augmentations != other.augmentations:
-            msg = "Both MapDataLoader objects must use the same augmentations."
-            raise ValueError(msg)
-        if self.classes != other.classes:
-            msg = "Both MapDataLoader objects must use the same classes."
-            raise ValueError(msg)
-        if self.dataset_size != other.dataset_size:
-            msg = "Both MapDataLoader objects must use the same dataset size."
-            raise ValueError(msg)
-        if self.save_to_disk != other.save_to_disk:
-            msg = "Both MapDataLoader objects must use the same save to disk option."
-            raise ValueError(msg)
-        if self.training != other.training:
-            msg = "Both MapDataLoader objects must use the same training option."
-            raise ValueError(msg)
-
-        new_loader = MapDataLoader(
-            dataset_size=self.dataset_size,
-            save_to_disk=self.save_to_disk,
-            training=self.training,
-            classes=self.classes,
-            pipeline=self.pipeline,
-            transformations=self.transformations,
-            augmentations=self.augmentations,
-        )
-        new_loader.dataset = ConcatDataset([self.dataset, other.dataset])
-        return new_loader
-
-    def load(self, datapath, datatype, label_path=None, weight_path=None) -> None:
+    def load(
+        self,
+        datapath: str | Path,
+        datatype: str,
+        label_path: str | Path | None = None,
+        weight_path: str | Path | None = None,
+        use_gpu: bool = False,
+        num_workers: int = 1,
+    ) -> None:
         """
         Load the data from the specified path and data type.
 
         Args:
-            datapath (str): The path to the directory containing the data.
+            datapath (str | Path): The path to the directory containing the data.
             datatype (str): The type of data to load.
+            label_path (str | Path, optional): The path to the directory containing the labels. Defaults to None.
+            weight_path (str | Path, optional): The path to the directory containing the weights. Defaults to None.
+            multi_process (bool, optional): Whether to use multi-processing. Defaults to False.
+            use_gpu (bool, optional): Whether to use the GPU. Defaults to False.
 
         Returns:
             None
         """
+        if use_gpu and num_workers > 1:
+            msg = "Cannot use GPU and multi-process at the same time."
+            raise ValueError(msg)
+        if use_gpu:
+            set_gpu()
+
         datapath = Path(datapath)
         label_path = Path(label_path) if label_path is not None else None
         weight_path = Path(weight_path) if weight_path is not None else None
+        map_hdf5_store = HDF5DataStore(datapath.joinpath("raw_map_data.h5"))
+        label_hdf5_store = (
+            HDF5DataStore(label_path.joinpath("label_data.h5"))
+            if label_path is not None
+            else None
+        )
+        weight_hdf5_store = (
+            HDF5DataStore(weight_path.joinpath("weight_data.h5"))
+            if weight_path is not None
+            else None
+        )
 
         datasets = []
-        num_workers = 6
 
         paths = list(datapath.rglob(f"*.{datatype}"))
         label_paths = (
@@ -353,6 +349,9 @@ class MapDataLoader(AbstractDataLoader):
 
         # ids right now depend on the data being saved with a certain format (id in the first part of the name, separated by _)
         # TODO: make this more general/document in the README
+
+        # TODO: this won't be how it works for multi classifciation tasks I'm guessing so need to include the ID
+        # generation from mlToolkit
         ids = np.unique([file.name.split("_")[0] for file in paths])
         if len(self.classes) == 0:
             self.classes = ids
@@ -378,25 +377,10 @@ class MapDataLoader(AbstractDataLoader):
             for c in self.classes
             if c in p.name.split("_")[0]
         ]
-        label_paths = (
-            [
-                label_path / p.name
-                for p in label_paths
-                for c in self.classes
-                if c in p.name.split("_")[0]
-            ]
-            if label_path is not None
-            else None
-        )
-        weight_paths = (
-            [
-                weight_path / p.name
-                for p in weight_paths
-                for c in self.classes
-                if c in p.name.split("_")[0]
-            ]
-            if weight_path is not None
-            else None
+        paths = filter_and_construct_paths(datapath, paths, self.classes)
+        label_paths = filter_and_construct_paths(label_path, label_paths, self.classes)
+        weight_paths = filter_and_construct_paths(
+            weight_path, weight_paths, self.classes
         )
         if self.dataset_size is not None:
             paths = paths[: self.dataset_size]
@@ -404,68 +388,34 @@ class MapDataLoader(AbstractDataLoader):
         if label_paths is not None and len(label_paths) != len(paths):
             msg = "Label paths and data paths do not match."
             raise RuntimeError(msg)
+
         if weight_paths is not None and len(weight_paths) != len(paths):
             msg = "Weight paths and data paths do not match."
             raise RuntimeError(msg)
+
         label_paths = label_paths if label_paths is not None else [None] * len(paths)
         weight_paths = weight_paths if weight_paths is not None else [None] * len(paths)
 
-        raw_map_HDF5 = HDF5DataStore(datapath.joinpath("raw_map_data.h5"))
-        label_HDF5 = (
-            HDF5DataStore(label_path.joinpath("label_data.h5"))
-            if label_paths is not None
-            else None
+        # HDF5 store assumes the data is all in one location
+
+        datasets = process_datasets(
+            num_workers,
+            paths,
+            label_paths,
+            weight_paths,
+            self.transformations,
+            self.augmentations,
+            self.decompose,
+            map_hdf5_store,
+            label_hdf5_store,
+            weight_hdf5_store,
         )
-        weight_HDF5 = (
-            HDF5DataStore(weight_path.joinpath("weight_data.h5"))
-            if weight_paths is not None
-            else None
-        )
 
-        with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            futures = [
-                executor.submit(
-                    process_dataset,
-                    path,
-                    label_path,
-                    weight_path,
-                    self.transformations,
-                    self.augmentations,
-                )
-                for path, label_path, weight_path in zip(
-                    paths, label_paths, weight_paths
-                )
-            ]
+        self.dataset = ConcatDataset(datasets)
 
-            for future in as_completed(futures):
-                result = future.result()
-                raw_map_HDF5.add_array(*result["map_data"])
-                if result["label_data"] and label_HDF5:
-                    label_HDF5.add_array(*result["label_data"])
-                if result["weight_data"] and weight_HDF5:
-                    weight_HDF5.add_array(*result["weight_data"])
-                datasets.append(result)  # Collect processed datasets
-
-        # Concat datasets if needed
-        concatenated_data = [dataset["map_data"][0] for dataset in datasets]
-        self.dataset = ConcatDataset(concatenated_data)
-
-    def process(self, paths: list[str], datatype: str):
-        """
-        Process the loaded data with the specified transformations.
-
-        Args:
-            paths (list[str]): List of file paths to the data.
-            datatype (str): Type of data being processed.
-
-        Returns:
-            DiskDataset: Processed dataset object.
-
-        Raises:
-            RuntimeError: If no transformations were provided.
-        """
-
-        raise NotImplementedError
+    def process(self):
+        """ """
+        raise NotImplementedError()
 
     def get_loader(
         self,
@@ -496,6 +446,7 @@ class MapDataLoader(AbstractDataLoader):
                 raise RuntimeError(msg)
             # split into train / val sets
             idx = np.random.permutation(len(self.dataset))
+
             if split_size < 1:
                 split_size = split_size * 100
 
@@ -646,87 +597,110 @@ class DiskDataset(AbstractDataset):
         return x
 
     def augment(self, augment):
-        raise NotImplementedError
+        raise NotImplementedError()
 
 
 class MapDataset(AbstractDataset):
-    """
-    A dataset class for loading map data, alongside the corresponding class labels and weights.
-    The map data is loaded from the disk and is decomposed into a set of tiles. These tiles are
-    then reuturned when indexing the dataset.
-
-    Args:
-
-    Note: I'm not sure if shuffling will be used but the method I'm currently using will lazily
-    load the data from disk so the map file will be loadeded, transformed and then the tile
-    will be extracted. It might be good to include a cache option to store map data in memory.
-    This could be useful to reduce the number of times the map data is loaded from disk...
-    Perhaps saving them as hdf5 files would be a good idea?
-    """
-
     def __init__(
         self,
         path: str | Path,
-        label_path: str | Path | None = None,
-        weight_path: str | Path | None = None,
-        transforms: list[str] | None = None,
-        augments: list[str] | None = None,
-        decompose_kwargs: dict[str, int] | None = None,
+        **kwargs,
     ) -> None:
+        """
+        A dataset class for loading map data, alongside the corresponding class labels and weights.
+        The map data is loaded from the disk and is decomposed into a set of tiles. These tiles are
+        then returned when indexing the dataset.
+
+        Args:
+            path (Union[str, Path]): The path to the map data.
+            label_path (Optional[Union[str, Path]]): The path to the label data. Defaults to None.
+            weight_path (Optional[Union[str, Path]]): The path to the weight data. Defaults to None.
+            map_hdf5_store (Optional[HDF5DataStore]): The HDF5 store for the map data. Defaults to None.
+            label_hdf5_store (Optional[HDF5DataStore]): The HDF5 store for the label data. Defaults to None.
+            transforms (Optional[List[str]]): The transformations to apply to the data.
+            augments (Optional[List[str]]): The augmentations to apply to the data.
+            decompose (bool): Whether to decompose the data into tiles. Defaults to True.
+            decompose_kwargs (Optional[Dict[str, int]]): The decomposition parameters. Defaults to None.
+            transform_kwargs (Optional[Dict]): The transformation parameters. Defaults to None.
+
+
+        Attributes:
+            data_shape (Optional[Tuple]): The shape of the map data. Defaults to None.
+            mapobj (Optional[MapObjHandle]): The map object handle for the map data. Defaults to None.
+            label_mapobj (Optional[MapObjHandle]): The map object handle for the label data. Defaults to None.
+            weight_mapobj (Optional[MapObjHandle]): The map object handle for the weight data. Defaults to None.
+            slices (Optional[List[Tuple]]): The slices of the data. Defaults to None.
+            tiles (Optional): The tiles of the data. Defaults to None.
+            tiles_count (int): The number of tiles. Defaults to 0.
+
+        """
+        config = DatasetConfig()
+
+        for key, value in kwargs.items():
+            if hasattr(config, key):
+                setattr(config, key, value)
+
         self.path = Path(path)
-        self.label_path = Path(label_path) if label_path is not None else None
-        self.weight_path = Path(weight_path) if weight_path is not None else None
-        self.mapobj = None
-        self.label_mapobj = None
-        self.weight_mapobj = None
-        self.slices = None
+        self.id = self.path.stem
+        self.label_path = (
+            Path(config.label_path) if config.label_path is not None else None
+        )
+        self.weight_path = (
+            Path(config.weight_path) if config.weight_path is not None else None
+        )
+
+        self.map_hdf5_store: HDF5DataStore | None = config.map_hdf5_store
+        self.label_hdf5_store: HDF5DataStore | None = config.label_hdf5_store
+        self.weight_hdf5_store: HDF5DataStore | None = config.weight_hdf5_store
+        self.slices: list[tuple] | None = None
         self.tiles = None
-        self.tiles_count: int = 0
-        self.transforms = transforms
-        self.augments = augments
-        self.transform_kwargs = None
-        if decompose_kwargs is None:
-            decompose_kwargs = {"cshape": 64, "margin": 8}
+        self.tiles_count = config.tiles_count
+        self.transforms = config.transforms
+        self.augments = config.augments
+        self.decompose_kwargs = config.decompose_kwargs
+        self.transform_kwargs = config.transform_kwargs
+        self.decompose = config.decompose
+        self.data_shape: tuple | None = None
+
+        self.mapobj: MapObjHandle | None = None
+        self.label_mapobj: MapObjHandle | None = None
+        self.weight_mapobj: MapObjHandle | None = None
+
+        if self.decompose_kwargs is None:
+            self.decompose_kwargs = {"cshape": 64, "margin": 8}
 
         if self.transform_kwargs is None:
             self.transform_kwargs = {}
 
-        if not decompose_kwargs.get("step", False):
-            decompose_kwargs["step"] = decompose_kwargs.get("cshape", 1) - (
-                2 * decompose_kwargs.get("margin")
+        if self.augments is None:
+            self.augments = []
+
+        if self.transforms is None:
+            self.transforms = []
+
+        if not self.decompose_kwargs.get("step", False):
+            self.decompose_kwargs["step"] = self.decompose_kwargs.get("cshape", 1) - (
+                2 * self.decompose_kwargs.get("margin")
             )
 
-        self.decompose_kwargs = decompose_kwargs
-
     def __len__(self):
-        # TODO: The tile counts need to be calculated before __getitem__ is called
-        # The amount of tiles is linked to the transformations applied to the map data
-        # This would mean the best place to calculate the tile count would be in the __init__
-        # method and subsequently the transform method would need to be called there too
+        if self.tiles_count == 0 and self.decompose:
+            self.generate_tile_indicies()
+        elif self.tiles_count == 0:
+            self.tiles_count = 1
 
-        # 1 represents the full map
-        return self.tiles_count if self.tiles_count != 0 else 1
+        return self.tiles_count
 
     def __getitem__(
         self, idx
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
-        # start by loading the map data
-        self.load_map_objects()
-
-        self.transform()
-        _ = self.augment()
-        # SEND TO HDF5 FILE to be saved, some will be duplicates so need to keep track of the duplicates
+        # This needs to be changhed to hold where the data is stored
 
         if (self.slices is None) or (self.tiles is None):
-            decompose = DecomposeToSlices(
-                self.mapobj,
-                step=self.decompose_kwargs.get("step"),
-                cshape=self.decompose_kwargs.get("cshape"),
-                margin=self.decompose_kwargs.get("margin"),
-            )  # TODO: move this
-            self.slices = decompose.slices
-            self.tiles = decompose.tiles
-            self.tiles_count = len(self.tiles)
+            self.generate_tile_indicies()
+
+        if self.mapobj is None:
+            self.load_map_objects()
 
         map_slice = self.mapobj.data[self.slices[idx]]
         label_slice = (
@@ -740,39 +714,13 @@ class MapDataset(AbstractDataset):
             else None
         )
 
-        # Close the map objects
-        self.close_map_objects()
+        map_tensor = torch.tensor(map_slice)
+        label_tensor = torch.tensor(label_slice) if label_slice is not None else None
+        weight_tensor = torch.tensor(weight_slice) if weight_slice is not None else None
 
-        return (
-            torch.tensor(map_slice),
-            torch.tensor(label_slice) if label_slice is not None else None,
-            torch.tensor(weight_slice) if weight_slice is not None else None,
-        )
+        self.close_map_objects(self.mapobj, self.label_mapobj, self.weight_mapobj)
 
-    def _transform_keywords_builder(self):
-        keywords = {}
-        keywords.update(self.decompose_kwargs)
-
-        for transform in self.transforms:
-            if transform == Transforms.MASKCROP.value:
-                keywords["mask"] = self.label_mapobj
-            if transform == Transforms.NORM.value:
-                keywords["ext_dim"] = (0, 0, 0)
-                keywords["fill_padding"] = (0, 0, 0)
-            if transform == Transforms.VOXNORM.value:
-                keywords["vox"] = self.decompose_kwargs.get("vox", 1.0)
-                keywords["vox_lim"] = self.decompose_kwargs.get("vox_lim", (0.95, 1.05))
-
-        return keywords
-
-    def _augment_keywords_builder(self):
-        keywords = {}
-        for augment in self.augments:
-            if augment.__class__.__name__ == "RandomRotationAugment":
-                keywords["ax"] = self.ax
-                keywords["an"] = self.an
-
-        return keywords
+        return map_tensor, label_tensor, weight_tensor
 
     def load_map_objects(
         self,
@@ -794,16 +742,14 @@ class MapDataset(AbstractDataset):
             if arg is not None:
                 arg.close()
 
-    def augment(self) -> None:
+    def augment(self, close_map_objects) -> None:
         augment_kwargs = self._augment_keywords_builder()
-        augment_kwargs["retall"] = True
         if len(self.augments) == 0:
             return {}
 
         self.mapobj, extra_kwargs = ComposeAugment(self.augments)(
             self.mapobj, **augment_kwargs
         )
-        augment_kwargs["retall"] = False
         augment_kwargs.update(
             extra_kwargs
         )  # update the kwargs with the returned values
@@ -815,10 +761,24 @@ class MapDataset(AbstractDataset):
             self.weight_mapobj, **augment_kwargs
         )
 
+        if close_map_objects:
+            self.close_map_objects(self.mapobj, self.label_mapobj, self.weight_mapobj)
+
         return augment_kwargs
 
-    def transform(self):
+    def transform(self, close_map_objects: bool = True):
+        """
+        Perform the transformations on the map data.
+
+        Note: The final map shape is calculated here,
+
+        Args:
+            close_map_objects (bool, optional): Whether to close the map objects after transformation. Defaults to True.
+
+        """
         # TODO: Need to see if same transforms are applied to all map objects, maybe just voxel space normalisation
+        if self.mapobj is None:
+            self.load_map_objects()
         transform_kwargs = self._transform_keywords_builder()
         if len(self.transforms) == 0:
             self.transform_kwargs = transform_kwargs
@@ -826,27 +786,248 @@ class MapDataset(AbstractDataset):
         self.transform_kwargs = ComposeTransform(self.transforms)(
             self.mapobj, **transform_kwargs
         )
+        # Need to do the transform on all the map objects
+        self.get_data_shape(close_map_objects=False)
+        if close_map_objects:
+            self.close_map_objects(self.mapobj, self.label_mapobj, self.weight_mapobj)
+
+    def get_data_shape(self, close_map_objects: bool = True):
+        if self.data_shape is not None:
+            return
+
+        if (self.mapobj is None) or (self.mapobj.data) is None:
+            self.load_map_objects()
+        self.data_shape = self.mapobj.data.shape
+        if self.label_mapobj is not None:
+            assert (
+                self.label_mapobj.data.shape == self.data_shape
+            ), "Map and label shapes do not match."
+        if self.weight_mapobj is not None:
+            assert (
+                self.weight_mapobj.data.shape == self.data_shape
+            ), "Map and weight shapes do not match."
+
+        if close_map_objects:
+            self.close_map_objects(self.mapobj, self.label_mapobj, self.weight_mapobj)
+
+    def generate_tile_indicies(self):
+        if self.data_shape is None:
+            self.get_data_shape()
+
+        decompose = DecomposeToSlices(
+            self.data_shape,
+            step=self.decompose_kwargs.get("step"),
+            cshape=self.decompose_kwargs.get("cshape"),
+            margin=self.decompose_kwargs.get("margin"),
+        )
+
+        self.slices = decompose.slices
+        self.tiles = decompose.tiles
+        self.tiles_count = len(self.tiles)
+
+    def _transform_keywords_builder(self):
+        keywords = {}
+        keywords.update(self.decompose_kwargs)
+
+        for transform in self.transforms:
+            if transform == Transforms.MASKCROP.value:
+                keywords["mask"] = self.label_mapobj
+
+            if transform == Transforms.NORM.value:
+                keywords["ext_dim"] = (0, 0, 0)
+                keywords["fill_padding"] = (0, 0, 0)
+
+            if transform == Transforms.VOXNORM.value:
+                keywords["vox"] = self.decompose_kwargs.get("vox", 1.0)
+                keywords["vox_lim"] = self.decompose_kwargs.get("vox_lim", (0.95, 1.05))
+
+        return keywords
+
+    def _augment_keywords_builder(self):
+        keywords = {}
+        for augment in self.augments:
+            if augment.__class__.__name__ == "RandomRotationAugment":
+                keywords["ax"] = self.ax
+                keywords["an"] = self.an
+
+        return keywords
 
 
-def process_dataset(path, label_path, weight_path, transformations, augmentations):
-    map_dataset = MapDataset(
-        path,
-        label_path=label_path,
-        weight_path=weight_path,
-        transforms=transformations,
-        augments=augmentations,
-    )
-    map_dataset.load_map_objects()
-    map_dataset.transform()
-    map_dataset.augment()
-    result = {
-        "map_data": (map_dataset.mapobj.data, f"{path.stem}_map"),
-        "label_data": (map_dataset.label_mapobj.data, f"{path.stem}_label")
-        if label_path is not None
-        else None,
-        "weight_data": (map_dataset.weight_mapobj.data, f"{path.stem}_weight")
-        if weight_path is not None
-        else None,
-    }
-    map_dataset.close_map_objects()
-    return result
+class ArrayDataset(AbstractDataset):
+
+    """Class to handle loading of data from hdf5 files, to be handled by a DataLoader"""
+
+    # need to add their own and update the dataset id
+    def __init__(
+        self,
+        dataset_id: str,
+        data_array: np.ndarray,
+        label_array: np.ndarray | None = None,
+        weight_array: np.ndarray | None = None,
+        **kwargs,
+    ) -> None:
+        config = DatasetConfig()
+        for key, value in kwargs.items():
+            if hasattr(config, key):
+                setattr(config, key, value)
+        self.id = dataset_id
+        self.data_array = data_array
+        self.label_array = label_array
+        self.weight_array = weight_array
+
+        self.slices = config.slices
+        self.tiles = config.tiles
+        self.tiles_count = config.tiles_count
+        self.augments = config.augments
+        self.decompose = config.decompose
+        self.data_shape: tuple | None = None
+        self.decompose_kwargs = config.decompose_kwargs
+        self.map_hdf5_store = config.map_hdf5_store
+        self.label_hdf5_store = config.label_hdf5_store
+        self.weight_hdf5_store = config.weight_hdf5_store
+        if self.decompose_kwargs is None:
+            self.decompose_kwargs = {"cshape": 64, "margin": 8}
+
+        if not self.decompose_kwargs.get("step", False):
+            self.decompose_kwargs["step"] = self.decompose_kwargs.get("cshape", 1) - (
+                2 * self.decompose_kwargs.get("margin")
+            )
+
+        if self.augments is None:
+            self.augments = []
+
+        # create an instance of the map dataset so I can use it's functions using composition
+        self.__mapdataset = MapDataset(
+            path=self.id,
+            # use the attributes from the config object
+            **config.__dict__,
+        )
+
+    def __len__(self):
+        if self.tiles_count == 0 and self.decompose:
+            self.generate_tile_indicies()
+        elif self.tiles_count == 0:
+            self.tiles_count = 1
+
+        return self.tiles_count
+
+    def __getitem__(self, idx):
+        if (self.slices is None) or (self.tiles is None):
+            self.generate_tile_indicies()
+
+        if self.data_array is None:
+            self.get_data()
+
+        data_slice = self.data_array[self.slices[idx]]
+        label_slice = (
+            self.label_array[self.slices[idx]] if self.label_array is not None else None
+        )
+        weight_slice = (
+            self.weight_array[self.slices[idx]]
+            if self.weight_array is not None
+            else None
+        )
+        data_tensor = torch.tensor(data_slice)
+        label_tensor = torch.tensor(label_slice) if label_slice is not None else None
+        weight_tensor = torch.tensor(weight_slice) if weight_slice is not None else None
+
+        self.close_data()
+
+        return data_tensor, label_tensor, weight_tensor
+
+    def get_data(self):
+        self.data_array = self.map_hdf5_store.get(self.id + "_map")
+        if self.label_hdf5_store is not None:
+            self.label_array = self.label_hdf5_store.get(self.id + "_label")
+        if self.weight_hdf5_store is not None:
+            self.weight_array = self.weight_hdf5_store.get(self.id + "_weight")
+
+    def close_data(self):
+        self.data_array = None
+        self.label_array = None
+        self.weight_array = None
+
+    def _augment_keywords_builder(self):
+        return self.__mapdataset._augment_keywords_builder()
+
+    def _transform_keywords_builder(self):
+        return self.__mapdataset._transform_keywords_builder()
+
+    # need to do augment
+    def transform(self) -> None:
+        msg = "Transforms are not supported for ArrayDataset."
+        raise NotImplementedError(msg)
+
+    def augment(self) -> None:
+        augment_kwargs = self._augment_keywords_builder()
+        if len(self.augments) == 0:
+            return {}
+
+        self.data_array, extra_kwargs = ComposeAugment(self.augments)(
+            self.data_array, **augment_kwargs
+        )
+        augment_kwargs.update(
+            extra_kwargs
+        )  # update the kwargs with the returned values
+        if self.label_array is not None:
+            self.label_array = ComposeAugment(self.augments)(
+                self.label_array, **augment_kwargs
+            )
+        if self.weight_array is not None:
+            self.weight_array = ComposeAugment(self.augments)(
+                self.weight_array, **augment_kwargs
+            )
+
+        return augment_kwargs
+
+    def get_data_shape(self, close_data: bool = True):
+        if self.data_shape is not None:
+            return
+
+        if self.data_array is None:
+            self.get_data()
+        self.data_shape = self.data_array.shape
+        if self.label_array is not None:
+            assert (
+                self.label_array.shape == self.data_shape
+            ), "Map and label shapes do not match."
+        if self.weight_array is not None:
+            assert (
+                self.weight_array.shape == self.data_shape
+            ), "Map and weight shapes do not match."
+
+        if close_data:
+            self.close_data()
+
+    def generate_tile_indicies(self):
+        if self.data_shape is None:
+            self.get_data_shape()
+
+        decompose = DecomposeToSlices(
+            self.data_shape,
+            step=self.decompose_kwargs.get("step"),
+            cshape=self.decompose_kwargs.get("cshape"),
+            margin=self.decompose_kwargs.get("margin"),
+        )
+
+        self.slices = decompose.slices
+        self.tiles = decompose.tiles
+        self.tiles_count = len(self.tiles)
+
+    def save_to_store(self):
+        self.id = self.map_hdf5_store.add_array(
+            self.data_array,
+            self.id + "_map",
+        )
+        self.id = self.id.replace("_map", "")
+
+        if self.label_array is not None:
+            self.label_hdf5_store.add_array(
+                self.label_array,
+                self.id + "_label",
+            )
+        if self.weight_array is not None:
+            self.weight_hdf5_store.add_array(
+                self.weight_array,
+                self.id + "_weight",
+            )
