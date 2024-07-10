@@ -15,7 +15,6 @@ import mrcfile
 import numpy as np
 import torch
 from ccpem_utils.map.parse_mrcmapobj import MapObjHandle, get_mapobjhandle
-from ccpem_utils.other.utils import set_gpu
 from scipy.ndimage import zoom
 from torch.utils.data import ConcatDataset, DataLoader, Subset
 from torchvision import transforms
@@ -28,6 +27,14 @@ from caked.utils import (
     filter_and_construct_paths,
     process_datasets,
 )
+
+try:
+    from ccpem_utils.other.utils import set_gpu
+except ImportError:
+
+    def set_gpu():
+        pass
+
 
 np.random.seed(42)
 TRANSFORM_OPTIONS = ["normalise", "gaussianblur", "shiftmin"]
