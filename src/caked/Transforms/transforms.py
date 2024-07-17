@@ -2,15 +2,16 @@ from __future__ import annotations
 
 from enum import Enum
 
+import numpy as np
 from ccpem_utils.map.mrc_map_utils import (
-    crop_map_grid,
+    interpolate_to_grid,
     normalise_mapobj,
+    pad_map_grid_split_distribution,
 )
 from ccpem_utils.map.parse_mrcmapobj import MapObjHandle
-from mlproteintoolbox.proteins.map_utils import voxel_normalisation
 
 from .base import TransformBase
-from .utils import divx, mask_from_labelobj, pad_map_grid_sample
+from .utils import divx, mask_from_labelobj
 
 
 class Transforms(Enum):
@@ -58,13 +59,14 @@ class ComposeTransform:
     def __init__(self, transforms: list[str]):
         self.transforms = transforms
 
-    def __call__(self, mapobj: MapObjHandle, **kwargs) -> MapObjHandle:
+    def __call__(self, *args: list[MapObjHandle], **kwargs) -> MapObjHandle:
         for transform in self.transforms:
-            mapobj = get_transform(transform)(mapobj, **kwargs)
-            if transform == Transforms.MASKCROP.value:
-                kwargs["ext_dim"] = [
-                    divx(d, kwargs.get("step", 1)) for d in mapobj.shape
-                ]
+            for mapobj in args:
+                if mapobj is None:
+                    continue
+
+                mapobj, kwargs = get_transform(transform)(mapobj, **kwargs)
+
         return kwargs
 
 
@@ -93,7 +95,8 @@ class DecomposeToSlices:
 
 class MapObjectVoxelNormalisation(TransformBase):
     """
-    Normalise the spacing of the voxels in a Map Object.
+    Resamples a map object to a desired voxel size if outside of vox_sh_min and
+    vox_sh_max.
 
     """
 
@@ -104,19 +107,39 @@ class MapObjectVoxelNormalisation(TransformBase):
         self,
         mapobj: MapObjHandle,
         **kwargs,
-    ):
-        norm_vox = kwargs.get("vox", None)
-        norm_vox_lim = kwargs.get("vox_lim", None)
+    ) -> tuple[MapObjHandle, dict]:
+        # This is needed to do the normalisation but I need to check if label obj is affected by this
 
-        voxel_normalisation(
+        vox = kwargs.get("vox", 1)
+        vox_min = kwargs.get("vox_min", 0.95)
+        vox_max = kwargs.get("vox_max", 1.05)
+
+        if not vox_min < vox < vox_max:
+            msg = f"Voxel size must be within the range of {vox_min} and {vox_max}."
+            raise ValueError(msg)
+
+        voxx, voxy, voxz = mapobj.apix
+        sample = np.array(mapobj.shape)
+        if voxx > vox_max or voxx < vox_min:
+            sample[2] = int(mapobj.dim[0] / vox)
+        if voxy > vox_max or voxy < vox_min:
+            sample[1] = int(mapobj.dim[1] / vox)
+        if voxz > vox_max or voxz < vox_min:
+            sample[0] = int(mapobj.dim[2] / vox)
+        sample = tuple(sample)
+
+        interpolate_to_grid(
             mapobj,
-            vox=norm_vox,
-            vox_min=norm_vox_lim[0],
-            vox_max=norm_vox_lim[1],
+            sample,
+            vox,
+            mapobj.origin,
             inplace=True,
+            prefilter_input=mapobj.all_transforms,
         )
 
-        return mapobj
+        mapobj.update_header_by_data()
+
+        return mapobj, kwargs
 
 
 class MapObjectNormalisation(TransformBase):
@@ -132,13 +155,15 @@ class MapObjectNormalisation(TransformBase):
         self,
         mapobj: MapObjHandle,
         **kwargs,
-    ):
+    ) -> tuple[MapObjHandle, dict]:
+        if not mapobj.all_transforms:
+            return mapobj, kwargs
         normalise_mapobj(
             mapobj,
             inplace=True,
         )
 
-        return mapobj
+        return mapobj, kwargs
 
 
 class MapObjectMaskCrop(TransformBase):
@@ -153,16 +178,17 @@ class MapObjectMaskCrop(TransformBase):
         self,
         mapobj: MapObjHandle,
         **kwargs,
-    ):
+    ) -> tuple[MapObjHandle, dict]:
         mask = kwargs.get("mask", None)
         if mask is None:
             msg = "Please provide a mask to crop the map object."
             raise ValueError(msg)
+
         mask = mask_from_labelobj(mask)
 
-        crop_map_grid(mapobj, input_maskobj=mask, inplace=True)
+        kwargs["ext_dim"] = [divx(d, kwargs.get("step", 1)) - d for d in mapobj.shape]
 
-        return mapobj
+        return mapobj, kwargs
 
 
 class MapObjectPadding(TransformBase):
@@ -177,16 +203,31 @@ class MapObjectPadding(TransformBase):
         self,
         mapobj: MapObjHandle,
         **kwargs,
-    ):
+    ) -> tuple[MapObjHandle, dict]:
         ext_dim = kwargs.get("ext_dim", None)
         left = kwargs.get("left", True)
 
-        pad_map_grid_sample(
+        pad_map_grid_split_distribution(
             mapobj,
             ext_dim=ext_dim,
             fill_padding=0.0,
             left=left,
             inplace=True,
         )
+        return mapobj, kwargs
 
-        return mapobj
+
+# def data_scale(mapobj: MapObjHandle, desired_shape: tuple, inplace=True):
+#     """
+#     Resamples image to desired shape.
+
+#     :param mapobj: (MapObjHandle) map object
+#     :param desired_shape: (tuple(int, int, int)) desired shape
+#     :param inplace: (bool) perform operation in place
+#     :return: mapobj: (MapObjHandle) updated map object
+#     """
+#     interpolate_to_grid(mapobj, desired_shape, mapobj.apix, mapobj.origin, inplace=True)
+#     if not inplace:
+#         return mapobj
+
+#     mapobj.update_header_by_data()
