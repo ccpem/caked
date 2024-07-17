@@ -42,6 +42,11 @@ class HDF5DataStore:
             self.file.close()
             self.file = None
 
+    def __del__(self):
+        self.close()
+        if self.temp_dir is not None:
+            self.temp_dir_obj.cleanup()
+
     def __getitem__(self, key: str):
         with h5py.File(self.save_path, "r") as f:
             return np.array(f[key])
