@@ -1,12 +1,46 @@
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 import h5py
 import numpy as np
 
 
 class HDF5DataStore:
-    def __init__(self, save_path: str):
-        self.save_path = save_path
+    def __init__(self, save_path: str, use_temp_dir: bool = True, batch_size: int = 10):
+        """
+        Object to store data in HDF5 format. If use_temp_dir is True, the file is saved
+        in a temporary directory and deleted when the object is deleted. This is useful
+        for temporary storage of data. If use_temp_dir is False, the file is
+        saved in the save_path provided. The file is not deleted when the object is deleted.
+
+        :param save_path: (str) path to save the file
+        :param use_temp_dir: (bool) whether to use a temporary directory
+        :param batch_size: (int) number of items to write to the file before closing
+
+
+        """
+        if use_temp_dir:
+            self.temp_dir_obj = tempfile.TemporaryDirectory()
+            self.temp_dir = Path(self.temp_dir_obj.name)
+            self.save_path = self.temp_dir.joinpath(save_path.name)
+        else:
+            self.save_path = Path(save_path)
+            self.temp_dir = None
+
+        self.batch_size = batch_size
+        self.counter = 0
+        self.file = None
+
+    def open(self, mode: str = "a"):
+        if self.file is None:
+            self.file = h5py.File(self.save_path, mode)
+
+    def close(self):
+        if self.file is not None:
+            self.file.close()
+            self.file = None
 
     def __getitem__(self, key: str):
         with h5py.File(self.save_path, "r") as f:
@@ -28,7 +62,9 @@ class HDF5DataStore:
         if self.check_name_in_store(dataset_name):
             dataset_name = self._add_number_to_dataset_name(dataset_name)
         with h5py.File(self.save_path, "a") as f:  # Open in append mode
-            f.create_dataset(dataset_name, data=array, compression=compression)
+            f.create_dataset(
+                dataset_name, data=array, compression=compression, chunks=True
+            )
 
         return dataset_name
 
@@ -63,3 +99,7 @@ class HDF5DataStore:
     def keys(self):
         with h5py.File(self.save_path, "r") as f:
             return list(f.keys())
+
+    def values(self):
+        with h5py.File(self.save_path, "r") as f:
+            return [np.array(f[key]) for key in f.keys()]
