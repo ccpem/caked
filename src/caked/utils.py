@@ -59,7 +59,6 @@ def process_datasets(
 
         for future in as_completed(futures):
             result, dataset = future.result()
-
             add_dataset_to_HDF5(
                 *result.values(),
                 dataset.id,
@@ -100,7 +99,6 @@ def process_map_dataset(
 
     """
     from caked.dataloader import MapDataset  # Avoid circular import
-
     map_dataset = MapDataset(
         path,
         label_path=label_path,
@@ -121,6 +119,7 @@ def process_map_dataset(
         if weight_path is not None
         else None,
     }
+    
 
     map_dataset.close_map_objects()
 
@@ -232,9 +231,21 @@ def duplicate_and_augment_from_hdf5(
             decompose=map_data_loader.dataset.datasets[0].decompose,
         )
 
-        dataset.augment()
+        dataset.augment() # Augment, flagged off when prediction mode selected
         dataset.save_to_store()
 
         datasets.append(dataset)
 
     map_data_loader.dataset = ConcatDataset(datasets)
+
+
+
+
+@none_return_none
+def get_sorted_paths(path: Path, datatype: str, dataset_size: int| None =None, ):
+    """
+    Sort paths by the stem of the file name.
+    """
+    paths = sorted(path.rglob(f"*.{datatype}"), key=lambda x: x.stem.split("_")[0])
+    return paths[:dataset_size] if dataset_size is not None else paths
+    
