@@ -24,7 +24,7 @@ from caked.hdf5 import HDF5DataStore
 from caked.Transforms.augments import ComposeAugment
 from caked.Transforms.transforms import ComposeTransform, DecomposeToSlices, Transforms
 from caked.utils import (
-    filter_and_construct_paths,
+    get_sorted_paths,
     process_datasets,
 )
 
@@ -118,9 +118,7 @@ class DiskDataLoader(AbstractDataLoader):
         else:
             class_check = np.in1d(self.classes, ids)
             if not np.all(class_check):
-                msg = "Not all classes in the list are present in the directory. Missing classes: {}".format(
-                    np.asarray(self.classes)[~class_check]
-                )
+                msg = f"Not all classes in the list are present in the directory. Missing classes: {np.asarray(self.classes)[~class_check]}"
                 raise RuntimeError(msg)
             class_check = np.in1d(ids, self.classes)
             if not np.all(class_check):
@@ -231,9 +229,7 @@ class DiskDataLoader(AbstractDataLoader):
 
             s = int(np.ceil(len(self.dataset) * int(split_size) / 100))
             if s < 2:
-                msg = "Train and validation sets must be larger than 1 sample, train: {}, val: {}.".format(
-                    len(idx[:-s]), len(idx[-s:])
-                )
+                msg = f"Train and validation sets must be larger than 1 sample, train: {len(idx[:-s])}, val: {len(idx[-s:])}."
                 raise RuntimeError(msg)
             train_data = Subset(self.dataset, indices=idx[:-s])
             val_data = Subset(self.dataset, indices=idx[-s:])
@@ -275,7 +271,8 @@ class MapDataLoader(AbstractDataLoader):
         decompose: bool = True,
     ) -> None:
         """
-        DataLoader implementation for loading map data from disk.
+        DataLoader implementation for loading map data from disk and saving them to a internal HDF5 store.
+
 
         """
         self.dataset_size = dataset_size
@@ -318,6 +315,8 @@ class MapDataLoader(AbstractDataLoader):
         Returns:
             None
         """
+        datasets = []
+
         if use_gpu and num_workers > 1:
             msg = "Cannot use GPU and multi-process at the same time."
             raise ValueError(msg)
@@ -328,6 +327,7 @@ class MapDataLoader(AbstractDataLoader):
         label_path = Path(label_path) if label_path is not None else None
         weight_path = Path(weight_path) if weight_path is not None else None
         map_hdf5_store = HDF5DataStore(datapath.joinpath("raw_map_data.h5"))
+
         label_hdf5_store = (
             HDF5DataStore(label_path.joinpath("label_data.h5"))
             if label_path is not None
@@ -339,58 +339,18 @@ class MapDataLoader(AbstractDataLoader):
             else None
         )
 
-        datasets = []
+        paths = get_sorted_paths(datapath, datatype, self.dataset_size)
+        label_paths = get_sorted_paths(label_path, datatype, self.dataset_size)
+        weight_paths = get_sorted_paths(weight_path, datatype, self.dataset_size)
 
-        paths = list(datapath.rglob(f"*.{datatype}"))
-        label_paths = (
-            list(label_path.rglob(f"*.{datatype}")) if label_path is not None else None
-        )
-        weight_paths = (
-            list(weight_path.rglob(f"*.{datatype}"))
-            if weight_path is not None
-            else None
-        )
-
-        if not self.debug:
-            random.shuffle(paths)
-
-        # ids right now depend on the data being saved with a certain format (id in the first part of the name, separated by _)
-        # TODO: make this more general/document in the README
-
-        # TODO: this won't be how it works for multi classifciation tasks I'm guessing so need to include the ID
-        # generation from mlToolkit
-        ids = np.unique([file.name.split("_")[0] for file in paths])
-        if len(self.classes) == 0:
-            self.classes = ids
-        else:
-            class_check = np.in1d(self.classes, ids)
-            if not np.all(class_check):
-                msg = "Not all classes in the list are present in the directory. Missing classes: {}".format(
-                    np.asarray(self.classes)[~class_check]
-                )
-                raise RuntimeError(msg)
-            class_check = np.in1d(ids, self.classes)
-            if not np.all(class_check):
-                logging.basicConfig(format="%(message)s", level=logging.INFO)
-                logging.info(
-                    "Not all classes in the directory are present in the "
-                    "classes list. Missing classes: %s. They will be ignored.",
-                    (np.asarray(ids)[~class_check]),
-                )
-
-        paths = [
-            datapath / p.name
-            for p in paths
-            for c in self.classes
-            if c in p.name.split("_")[0]
-        ]
-        paths = filter_and_construct_paths(datapath, paths, self.classes)
-        label_paths = filter_and_construct_paths(label_path, label_paths, self.classes)
-        weight_paths = filter_and_construct_paths(
-            weight_path, weight_paths, self.classes
-        )
         if self.dataset_size is not None:
             paths = paths[: self.dataset_size]
+            label_paths = (
+                label_paths[: self.dataset_size] if label_paths is not None else None
+            )
+            weight_paths = (
+                weight_paths[: self.dataset_size] if weight_paths is not None else None
+            )
 
         if label_paths is not None and len(label_paths) != len(paths):
             msg = "Label paths and data paths do not match."
@@ -400,8 +360,8 @@ class MapDataLoader(AbstractDataLoader):
             msg = "Weight paths and data paths do not match."
             raise RuntimeError(msg)
 
-        label_paths = label_paths if label_paths is not None else [None] * len(paths)
-        weight_paths = weight_paths if weight_paths is not None else [None] * len(paths)
+        label_paths = label_paths or [None] * len(paths)
+        weight_paths = weight_paths or [None] * len(paths)
 
         # HDF5 store assumes the data is all in one location
 
@@ -420,9 +380,28 @@ class MapDataLoader(AbstractDataLoader):
 
         self.dataset = ConcatDataset(datasets)
 
+        # TODO: I think this should be removed in favour of user input for classes
+        if not self.classes and label_hdf5_store is not None:
+            unique_labels = [
+                np.unique(label_data) for label_data in label_hdf5_store.values()
+            ]
+            self.classes = np.unique(np.concatenate(unique_labels).flatten()).tolist()
+
     def process(self):
         """ """
         raise NotImplementedError()
+
+    def get_hdf5_store(
+        self,
+    ) -> tuple[HDF5DataStore, HDF5DataStore | None, HDF5DataStore | None]:
+        if self.dataset is None:
+            msg = "The dataset has not been loaded yet."
+            raise RuntimeError(msg)
+        return (
+            self.dataset.datasets[0].map_hdf5_store,
+            self.dataset.datasets[0].label_hdf5_store,
+            self.dataset.datasets[0].weight_hdf5_store,
+        )
 
     def get_loader(
         self,
@@ -459,9 +438,7 @@ class MapDataLoader(AbstractDataLoader):
 
             s = int(np.ceil(len(self.dataset) * int(split_size) / 100))
             if s < 2:
-                msg = "Train and validation sets must be larger than 1 sample, train: {}, val: {}.".format(
-                    len(idx[:-s]), len(idx[-s:])
-                )
+                msg = f"Train and validation sets must be larger than 1 sample, train: {len(idx[:-s])}, val: {len(idx[-s:])}."
                 raise RuntimeError(msg)
             train_data = Subset(self.dataset, indices=idx[:-s])
             val_data = Subset(self.dataset, indices=idx[-s:])
@@ -674,7 +651,7 @@ class MapDataset(AbstractDataset):
         self.weight_mapobj: MapObjHandle | None = None
 
         if self.decompose_kwargs is None:
-            self.decompose_kwargs = {"cshape": 64, "margin": 8}
+            self.decompose_kwargs = {"cshape": 32, "margin": 8}
 
         if self.transform_kwargs is None:
             self.transform_kwargs = {}
@@ -733,16 +710,19 @@ class MapDataset(AbstractDataset):
         self,
     ) -> None:
         self.mapobj = get_mapobjhandle(self.path)
+        self.mapobj.all_transforms = True
         if self.label_path is not None:
             if not self.label_path.exists():
                 msg = f"Label file {self.label_path} not found."
                 raise FileNotFoundError(msg)
             self.label_mapobj = get_mapobjhandle(self.label_path)
+            self.label_mapobj.all_transforms = False
         if self.weight_path is not None:
             if not self.weight_path.exists():
                 msg = f"Weight file {self.weight_path} not found."
                 raise FileNotFoundError(msg)
             self.weight_mapobj = get_mapobjhandle(self.weight_path)
+            self.weight_mapobj.all_transforms = False
 
     def close_map_objects(self, *args):
         for arg in args:
@@ -791,10 +771,10 @@ class MapDataset(AbstractDataset):
             self.transform_kwargs = transform_kwargs
 
         self.transform_kwargs = ComposeTransform(self.transforms)(
-            self.mapobj, **transform_kwargs
+            self.mapobj, self.label_mapobj, self.weight_mapobj, **transform_kwargs
         )
-        # Need to do the transform on all the map objects
         self.get_data_shape(close_map_objects=False)
+
         if close_map_objects:
             self.close_map_objects(self.mapobj, self.label_mapobj, self.weight_mapobj)
 
@@ -808,11 +788,11 @@ class MapDataset(AbstractDataset):
         if self.label_mapobj is not None:
             assert (
                 self.label_mapobj.data.shape == self.data_shape
-            ), "Map and label shapes do not match."
+            ), f"Map and label shapes do not match for {self.id}."
         if self.weight_mapobj is not None:
             assert (
                 self.weight_mapobj.data.shape == self.data_shape
-            ), "Map and weight shapes do not match."
+            ), f"Map and weight shapes do not match for {self.id}."
 
         if close_map_objects:
             self.close_map_objects(self.mapobj, self.label_mapobj, self.weight_mapobj)
@@ -861,7 +841,6 @@ class MapDataset(AbstractDataset):
 
 
 class ArrayDataset(AbstractDataset):
-
     """Class to handle loading of data from hdf5 files, to be handled by a DataLoader"""
 
     # need to add their own and update the dataset id
@@ -973,15 +952,16 @@ class ArrayDataset(AbstractDataset):
         self.data_array, extra_kwargs = ComposeAugment(self.augments)(
             self.data_array, **augment_kwargs
         )
+
         augment_kwargs.update(
             extra_kwargs
         )  # update the kwargs with the returned values
         if self.label_array is not None:
-            self.label_array = ComposeAugment(self.augments)(
+            self.label_array, _ = ComposeAugment(self.augments)(
                 self.label_array, **augment_kwargs
             )
         if self.weight_array is not None:
-            self.weight_array = ComposeAugment(self.augments)(
+            self.weight_array, _ = ComposeAugment(self.augments)(
                 self.weight_array, **augment_kwargs
             )
 
@@ -1021,7 +1001,7 @@ class ArrayDataset(AbstractDataset):
         self.tiles = decompose.tiles
         self.tiles_count = len(self.tiles)
 
-    def save_to_store(self):
+    def save_to_store(self, close_data: bool = True):
         self.id = self.map_hdf5_store.add_array(
             self.data_array,
             self.id + "_map",
@@ -1038,3 +1018,5 @@ class ArrayDataset(AbstractDataset):
                 self.weight_array,
                 self.id + "_weight",
             )
+        if close_data:
+            self.close_data()
