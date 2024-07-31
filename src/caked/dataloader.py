@@ -119,7 +119,7 @@ class DiskDataLoader(AbstractDataLoader):
             Path(datapath) / p
             for p in paths
             for c in self.classes
-            if c in p.split("_")[0]
+            if c == p.split("_")[0]
         ]
         if self.dataset_size is not None:
             paths = paths[: self.dataset_size]
