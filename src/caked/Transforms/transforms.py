@@ -77,9 +77,16 @@ class DecomposeToSlices:
         step = kwargs.get("step", 1)
         cshape = kwargs.get("cshape", 1)
         slices, tiles = [], []
+
         for i in range(0, map_shape[0], step):
             for j in range(0, map_shape[1], step):
                 for k in range(0, map_shape[2], step):
+                    if (
+                        i + cshape > map_shape[0]
+                        or j + cshape > map_shape[1]
+                        or k + cshape > map_shape[2]
+                    ):
+                        continue
                     slices.append(
                         (
                             slice(i, i + cshape),
@@ -88,6 +95,13 @@ class DecomposeToSlices:
                         )
                     )
                     tiles.append((i, j, k))
+
+                    ishape = (i + cshape) - i
+                    jshape = (j + cshape) - j
+                    kshape = (k + cshape) - k
+
+                    if ishape != 32 or jshape != 32 or kshape != 32:
+                        print(ishape, jshape, kshape)
 
         self.slices = slices
         self.tiles = tiles
@@ -186,8 +200,6 @@ class MapObjectMaskCrop(TransformBase):
 
         mask = mask_from_labelobj(mask)
 
-        kwargs["ext_dim"] = [divx(d, kwargs.get("step", 1)) - d for d in mapobj.shape]
-
         return mapobj, kwargs
 
 
@@ -204,9 +216,9 @@ class MapObjectPadding(TransformBase):
         mapobj: MapObjHandle,
         **kwargs,
     ) -> tuple[MapObjHandle, dict]:
-        ext_dim = kwargs.get("ext_dim", None)
+        ext_dim = [divx(d, kwargs.get("step", 1)) - d for d in mapobj.shape]
+  
         left = kwargs.get("left", True)
-
         pad_map_grid_split_distribution(
             mapobj,
             ext_dim=ext_dim,
