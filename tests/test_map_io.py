@@ -42,11 +42,11 @@ def test_slices(test_data_single_mrc_dir):
         transforms=[],
         augments=[],
     )
-    slice_, _, _ = test_map_dataset.__getitem__(0)
+    slice_ = test_map_dataset.__getitem__(0)[0]
 
     assert isinstance(slice_, torch.Tensor)
-    assert len(test_map_dataset) == 2
-    assert slice_.shape == (49, 46, 48)
+    assert len(test_map_dataset) == 4
+    assert slice_.shape == (32, 32, 32)
 
 
 def test_transforms(test_data_single_mrc_dir):
@@ -57,10 +57,10 @@ def test_transforms(test_data_single_mrc_dir):
     )
     test_map_dataset.load_map_objects()
     test_map_dataset.transform()
-    slice_, _, _ = test_map_dataset.__getitem__(0)
+    slice_ = test_map_dataset.__getitem__(0)[0]
 
-    assert len(test_map_dataset) == 8
-    assert slice_.shape == (64, 64, 64)
+    assert len(test_map_dataset) == 64
+    assert slice_.shape == (32, 32, 32)
 
 
 def test_dataloader_load_to_HDF5_file(test_data_single_mrc_temp_dir):
@@ -73,7 +73,7 @@ def test_dataloader_load_to_HDF5_file(test_data_single_mrc_temp_dir):
     assert test_map_dataloader is not None
     assert isinstance(test_map_dataloader, MapDataLoader)
     assert test_map_dataloader.dataset is not None
-    assert test_data_single_mrc_temp_dir.joinpath("raw_map_data.h5").exists()
+    assert test_map_dataloader.dataset.datasets[0].map_hdf5_store.save_path.exists()
 
 
 def test_dataloader_load_to_HDF5_file_with_transforms(test_data_single_mrc_temp_dir):
@@ -88,7 +88,7 @@ def test_dataloader_load_to_HDF5_file_with_transforms(test_data_single_mrc_temp_
     assert test_map_dataloader is not None
     assert isinstance(test_map_dataloader, MapDataLoader)
     assert test_map_dataloader.dataset is not None
-    assert test_data_single_mrc_temp_dir.joinpath("raw_map_data.h5").exists()
+    assert test_map_dataloader.dataset.datasets[0].map_hdf5_store.save_path.exists()
 
 
 def test_add_duplicate_dataset_to_dataloader(test_data_single_mrc_temp_dir):
@@ -135,10 +135,10 @@ def test_add_duplicate_dataset_to_dataloader_with_augments(
     assert "realmap_map" in hdf5_store.keys()  # noqa: SIM118
     assert "1--realmap_map" in hdf5_store.keys()  # noqa: SIM118
 
-    assert len(test_map_dataloader.dataset.datasets[0]) == 8
-    assert len(test_map_dataloader.dataset.datasets[1]) == 8
+    assert len(test_map_dataloader.dataset.datasets[0]) == 64
+    assert len(test_map_dataloader.dataset.datasets[1]) == 64
 
-    assert len(test_map_dataloader.dataset) == 16
+    assert len(test_map_dataloader.dataset) == 128
 
 
 def test_dataloader_load_multi_process(test_data_single_mrc_temp_dir):
@@ -152,6 +152,6 @@ def test_dataloader_load_multi_process(test_data_single_mrc_temp_dir):
     assert test_map_dataloader is not None
     assert isinstance(test_map_dataloader, MapDataLoader)
     assert test_map_dataloader.dataset is not None
-    assert test_data_single_mrc_temp_dir.joinpath("raw_map_data.h5").exists()
+    assert test_map_dataloader.dataset.datasets[0].map_hdf5_store.save_path.exists()
 
     # test_map_dataloader.
