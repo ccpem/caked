@@ -702,9 +702,27 @@ class MapDataset(AbstractDataset):
         label_tensor = torch.tensor(label_slice) if label_slice is not None else None
         weight_tensor = torch.tensor(weight_slice) if weight_slice is not None else None
 
+        if weight_tensor is None and label_tensor is not None:
+            weight_tensor = torch.where(
+                label_tensor != 0,
+                torch.ones_like(label_tensor),
+                torch.zeros_like(label_tensor),
+            )
+
+        # Ensure weight_tensor has the same shape as map_tensor
+        if weight_tensor is not None and weight_tensor.shape == map_tensor.shape:
+            # Add weight values to the first dimension of the map tensor
+            map_tensor = torch.cat(
+                (weight_tensor.unsqueeze(0), map_tensor.unsqueeze(0)), dim=0
+            )
+
+        # if the weight tensor is None then I want to create weights tesnor using the label tensor
+
         self.close_map_objects(self.mapobj, self.label_mapobj, self.weight_mapobj)
 
-        return map_tensor, label_tensor, weight_tensor
+        return tuple(
+            tensor for tensor in (map_tensor, label_tensor) if tensor is not None
+        )
 
     def load_map_objects(
         self,
@@ -905,6 +923,7 @@ class ArrayDataset(AbstractDataset):
             self.get_data()
 
         data_slice = self.data_array[self.slices[idx]]
+
         label_slice = (
             self.label_array[self.slices[idx]] if self.label_array is not None else None
         )
@@ -917,9 +936,24 @@ class ArrayDataset(AbstractDataset):
         label_tensor = torch.tensor(label_slice) if label_slice is not None else None
         weight_tensor = torch.tensor(weight_slice) if weight_slice is not None else None
 
+        if weight_tensor is None and label_tensor is not None:
+            weight_tensor = torch.where(
+                label_tensor != 0,
+                torch.ones_like(label_tensor),
+                torch.zeros_like(label_tensor),
+            )
+
+        if weight_tensor is not None and weight_tensor.shape == data_tensor.shape:
+            # Add weight values to the first dimension of the map tensor
+            data_tensor = torch.cat(
+                (weight_tensor.unsqueeze(0), data_tensor.unsqueeze(0)), dim=0
+            )
+
         self.close_data()
 
-        return data_tensor, label_tensor, weight_tensor
+        return tuple(
+            tensor for tensor in (data_tensor, label_tensor) if tensor is not None
+        )
 
     def get_data(self):
         self.data_array = self.map_hdf5_store.get(self.id + "_map")
