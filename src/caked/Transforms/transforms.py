@@ -53,19 +53,19 @@ class ComposeTransform:
 
     :param transforms: (list) list of transformations to compose
 
-    :return: (MapObjHandle) transformed MapObjHandle
+    :return: (dict) transformed MapObjHandle kwargs
     """
 
     def __init__(self, transforms: list[str]):
         self.transforms = transforms
 
-    def __call__(self, *args: list[MapObjHandle], **kwargs) -> MapObjHandle:
+    def __call__(self, *args: list[MapObjHandle | None], **kwargs) -> dict:
         for transform in self.transforms:
             for mapobj in args:
                 if mapobj is None:
-                    continue
+                    continue  # type: ignore[unreachable]
 
-                mapobj, kwargs = get_transform(transform)(mapobj, **kwargs)
+                _, kwargs = get_transform(transform)(mapobj, **kwargs)
 
         return kwargs
 
@@ -217,7 +217,7 @@ class MapObjectPadding(TransformBase):
         **kwargs,
     ) -> tuple[MapObjHandle, dict]:
         ext_dim = [divx(d, kwargs.get("step", 1)) - d for d in mapobj.shape]
-  
+
         left = kwargs.get("left", True)
         pad_map_grid_split_distribution(
             mapobj,

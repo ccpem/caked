@@ -3,7 +3,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import numpy as np
-from ccpem_utils.map.parse_mrcmapobj import MapObjHandle
 
 
 class TransformBase(ABC):
@@ -17,7 +16,7 @@ class TransformBase(ABC):
         pass
 
     @abstractmethod
-    def __call__(self, data):
+    def __call__(self, mapobj, **kwargs):
         msg = "The __call__ method must be implemented in the subclass"
         raise NotImplementedError(msg)
 
