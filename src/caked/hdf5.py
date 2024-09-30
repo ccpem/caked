@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import tempfile
+from collections import OrderedDict
 from pathlib import Path
 
 import h5py
 import numpy as np
-
-from collections import OrderedDict
-
 import torch
 
 
@@ -16,7 +14,7 @@ class HDF5DataStore:
         self,
         save_path: str | Path,
         use_temp_dir: bool = True,
-        cache: LRUCache = None,
+        cache: LRUCache | None = None,
         batch_size: int = 10,
         cache_size: int = 5,
     ):
@@ -27,15 +25,17 @@ class HDF5DataStore:
         saved in the save_path provided. The file is not deleted when the object is deleted.
 
         :param save_path: (str) path to save the file
+        :param cache: (LRUCache) cache object to store data
         :param use_temp_dir: (bool) whether to use a temporary directory
         :param batch_size: (int) number of items to write to the file before closing
+        :param cache_size: (int) size of the cache in GB
 
 
         """
         save_path = Path(save_path)
         if use_temp_dir:
             self.temp_dir_obj = tempfile.TemporaryDirectory()
-            self.temp_dir = Path(self.temp_dir_obj.name)
+            self.temp_dir: Path | None = Path(self.temp_dir_obj.name)
             self.save_path = self.temp_dir.joinpath(save_path.name)
         else:
             self.save_path = Path(save_path)
@@ -55,7 +55,7 @@ class HDF5DataStore:
 
     def close(self):
         if self.file is not None:
-            self.file.close()
+            self.file.close()  # type: ignore[unreachable]
             self.file = None
 
     def __del__(self):
@@ -131,7 +131,7 @@ class HDF5DataStore:
 
     def values(self, to_torch: bool = False):
         with h5py.File(self.save_path, "r") as f:
-            for key in f.keys():
+            for key in f:
                 if to_torch:
                     yield torch.from_numpy(np.array(f[key]))
                 else:
@@ -139,9 +139,9 @@ class HDF5DataStore:
 
 
 class LRUCache:
-    def __init__(self, max_memory_gb: float):
+    def __init__(self, max_memory_gb: int):
         self.max_memory_bytes = max_memory_gb * 1024**3
-        self.cache = OrderedDict()
+        self.cache: OrderedDict = OrderedDict()
         self.current_memory_usage = 0
 
     def get_memory_usage(self, obj) -> int:
