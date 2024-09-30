@@ -20,10 +20,11 @@ from torch.utils.data import ConcatDataset, DataLoader, Subset
 from torchvision import transforms
 
 from caked.base import AbstractDataLoader, AbstractDataset, DatasetConfig
-from caked.hdf5 import HDF5DataStore
+from caked.hdf5 import HDF5DataStore, LRUCache
 from caked.Transforms.augments import ComposeAugment
 from caked.Transforms.transforms import ComposeTransform, DecomposeToSlices, Transforms
 from caked.utils import (
+    get_max_memory,
     get_sorted_paths,
     process_datasets,
 )
@@ -296,6 +297,7 @@ class MapDataLoader(AbstractDataLoader):
         self,
         datapath: str | Path,
         datatype: str,
+        cache_size: int | None = None,
         label_path: str | Path | None = None,
         weight_path: str | Path | None = None,
         use_gpu: bool = False,
@@ -326,16 +328,18 @@ class MapDataLoader(AbstractDataLoader):
         datapath = Path(datapath)
         label_path = Path(label_path) if label_path is not None else None
         weight_path = Path(weight_path) if weight_path is not None else None
-        map_hdf5_store = HDF5DataStore(datapath.joinpath("raw_map_data.h5"))
+
+        cache_size = get_max_memory() if cache_size is None else cache_size
+        cache = LRUCache(cache_size)
+
+        map_hdf5_store = HDF5DataStore(
+            datapath.joinpath("raw_map_data.h5"),
+            cache=cache,
+        )  # TODO: cache size should be a parameter and 40 is for my own testing
 
         label_hdf5_store = (
-            HDF5DataStore(label_path.joinpath("label_data.h5"))
+            HDF5DataStore(label_path.joinpath("label_data.h5"), cache=cache)
             if label_path is not None
-            else None
-        )
-        weight_hdf5_store = (
-            HDF5DataStore(weight_path.joinpath("weight_data.h5"))
-            if weight_path is not None
             else None
         )
 
@@ -375,7 +379,6 @@ class MapDataLoader(AbstractDataLoader):
             self.decompose,
             map_hdf5_store,
             label_hdf5_store,
-            weight_hdf5_store,
         )
 
         self.dataset = ConcatDataset(datasets)
@@ -393,14 +396,13 @@ class MapDataLoader(AbstractDataLoader):
 
     def get_hdf5_store(
         self,
-    ) -> tuple[HDF5DataStore, HDF5DataStore | None, HDF5DataStore | None]:
+    ) -> tuple[HDF5DataStore, HDF5DataStore | None]:
         if self.dataset is None:
             msg = "The dataset has not been loaded yet."
             raise RuntimeError(msg)
         return (
             self.dataset.datasets[0].map_hdf5_store,
             self.dataset.datasets[0].label_hdf5_store,
-            self.dataset.datasets[0].weight_hdf5_store,
         )
 
     def get_loader(
@@ -408,6 +410,7 @@ class MapDataLoader(AbstractDataLoader):
         batch_size: int,
         split_size: float | None = None,
         no_val_drop: bool = False,
+        split: bool = True,
     ):
         """
         Retrieve the data loader.
@@ -426,7 +429,7 @@ class MapDataLoader(AbstractDataLoader):
             RuntimeError: If the train and validation sets are smaller than 2 samples.
 
         """
-        if self.training:
+        if self.training and split:
             if split_size is None:
                 msg = "Split size must be provided for training. "
                 raise RuntimeError(msg)
@@ -633,17 +636,20 @@ class MapDataset(AbstractDataset):
             Path(config.weight_path) if config.weight_path is not None else None
         )
 
-        self.map_hdf5_store: HDF5DataStore | None = config.map_hdf5_store
-        self.label_hdf5_store: HDF5DataStore | None = config.label_hdf5_store
-        self.weight_hdf5_store: HDF5DataStore | None = config.weight_hdf5_store
-        self.slices: list[tuple] | None = None
-        self.tiles = None
-        self.tiles_count = config.tiles_count
-        self.transforms = config.transforms
-        self.augments = config.augments
-        self.decompose_kwargs = config.decompose_kwargs
-        self.transform_kwargs = config.transform_kwargs
-        self.decompose = config.decompose
+        self.map_hdf5_store: HDF5DataStore = kwargs.get(
+            "map_hdf5_store", config.map_hdf5_store
+        )
+        self.label_hdf5_store: HDF5DataStore | None = kwargs.get(
+            "label_hdf5_store", config.label_hdf5_store
+        )
+        self.slices: list = kwargs.get("slices", [])
+        self.tiles: list = kwargs.get("tiles", [])
+        self.tiles_count = kwargs.get("tiles_count", config.tiles_count)
+        self.transforms = kwargs.get("transforms", config.transforms)
+        self.augments = kwargs.get("augments", config.augments)
+        self.decompose_kwargs = kwargs.get("decompose_kwargs", config.decompose_kwargs)
+        self.transform_kwargs = kwargs.get("transform_kwargs", config.transform_kwargs)
+        self.decompose = kwargs.get("decompose", config.decompose)
         self.data_shape: tuple | None = None
 
         self.mapobj: MapObjHandle | None = None
@@ -656,11 +662,9 @@ class MapDataset(AbstractDataset):
         if self.transform_kwargs is None:
             self.transform_kwargs = {}
 
-        if self.augments is None:
-            self.augments = []
+        self.augments = [] if self.augments is None else self.augments
 
-        if self.transforms is None:
-            self.transforms = []
+        self.transforms = [] if self.transforms is None else self.transforms
 
         if not self.decompose_kwargs.get("step", False):
             self.decompose_kwargs["step"] = self.decompose_kwargs.get("cshape", 1) - (
@@ -680,45 +684,36 @@ class MapDataset(AbstractDataset):
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
         # This needs to be changhed to hold where the data is stored
 
-        if (self.slices is None) or (self.tiles is None):
+        if (not self.slices) or (not self.tiles):
             self.generate_tile_indicies()
 
-        if self.mapobj is None:
-            self.load_map_objects()
+        map_array = self.map_hdf5_store.get(f"{self.id}_map", to_torch=True)
 
-        map_slice = self.mapobj.data[self.slices[idx]]
+        if map_array.ndim == 4:
+            x_slice, y_slice, z_slice = self.slices[idx]
+            map_slice = map_array[:, x_slice, y_slice, z_slice]
+        else:
+            map_slice = map_array[self.slices[idx]]
+
         label_slice = (
-            self.label_mapobj.data[self.slices[idx]]
-            if self.label_mapobj is not None
-            else None
-        )
-        weight_slice = (
-            self.weight_mapobj.data[self.slices[idx]]
-            if self.weight_mapobj is not None
+            self.label_hdf5_store.get(f"{self.id}_label", to_torch=True)[
+                self.slices[idx]
+            ]
+            if self.label_hdf5_store is not None
             else None
         )
 
-        map_tensor = torch.tensor(map_slice)
-        label_tensor = torch.tensor(label_slice) if label_slice is not None else None
-        weight_tensor = torch.tensor(weight_slice) if weight_slice is not None else None
+        if not isinstance(map_slice, torch.Tensor):
+            map_tensor = torch.tensor(map_slice)
+        else:
+            map_tensor = map_slice
 
-        if weight_tensor is None and label_tensor is not None:
-            weight_tensor = torch.where(
-                label_tensor != 0,
-                torch.ones_like(label_tensor),
-                torch.zeros_like(label_tensor),
+        if not isinstance(label_slice, torch.Tensor):
+            label_tensor = (
+                torch.tensor(label_slice) if label_slice is not None else None
             )
-
-        # Ensure weight_tensor has the same shape as map_tensor
-        if weight_tensor is not None and weight_tensor.shape == map_tensor.shape:
-            # Add weight values to the first dimension of the map tensor
-            map_tensor = torch.cat(
-                (weight_tensor.unsqueeze(0), map_tensor.unsqueeze(0)), dim=0
-            )
-
-        # if the weight tensor is None then I want to create weights tesnor using the label tensor
-
-        self.close_map_objects(self.mapobj, self.label_mapobj, self.weight_mapobj)
+        else:
+            label_tensor = label_slice
 
         return tuple(
             tensor for tensor in (map_tensor, label_tensor) if tensor is not None
@@ -747,7 +742,7 @@ class MapDataset(AbstractDataset):
             if arg is not None:
                 arg.close()
 
-    def augment(self, close_map_objects) -> None:
+    def augment(self, close_map_objects) -> dict:
         augment_kwargs = self._augment_keywords_builder()
         if len(self.augments) == 0:
             return {}
@@ -802,7 +797,9 @@ class MapDataset(AbstractDataset):
 
         if (self.mapobj is None) or (self.mapobj.data) is None:
             self.load_map_objects()
-        self.data_shape = self.mapobj.data.shape
+        if self.mapobj is not None and self.mapobj.data is not None:
+            # MyPy shenanigans
+            self.data_shape = self.mapobj.data.shape
         if self.label_mapobj is not None:
             assert (
                 self.label_mapobj.data.shape == self.data_shape
@@ -879,16 +876,15 @@ class ArrayDataset(AbstractDataset):
         self.label_array = label_array
         self.weight_array = weight_array
 
-        self.slices = config.slices
-        self.tiles = config.tiles
-        self.tiles_count = config.tiles_count
-        self.augments = config.augments
-        self.decompose = config.decompose
+        self.slices = kwargs.get("slices", config.slices)
+        self.tiles = kwargs.get("tiles", config.tiles)
+        self.tiles_count = kwargs.get("tiles_count", config.tiles_count)
+        self.augments = kwargs.get("augments", config.augments)
+        self.decompose = kwargs.get("decompose", config.decompose)
         self.data_shape: tuple | None = None
-        self.decompose_kwargs = config.decompose_kwargs
-        self.map_hdf5_store = config.map_hdf5_store
-        self.label_hdf5_store = config.label_hdf5_store
-        self.weight_hdf5_store = config.weight_hdf5_store
+        self.decompose_kwargs = kwargs.get("decompose_kwargs", config.decompose_kwargs)
+        self.map_hdf5_store = kwargs.get("map_hdf5_store", config.map_hdf5_store)
+        self.label_hdf5_store = kwargs.get("label_hdf5_store", config.label_hdf5_store)
         if self.decompose_kwargs is None:
             self.decompose_kwargs = {"cshape": 64, "margin": 8}
 
@@ -922,45 +918,47 @@ class ArrayDataset(AbstractDataset):
         if self.data_array is None:
             self.get_data()
 
-        data_slice = self.data_array[self.slices[idx]]
+        # the map_slice could be the shape [2, x, y, x] however the slice is only [x, y, z]
+
+        # MyPy shenanigans
+        if self.data_array is not None and self.data_array.ndim == 4:
+            x_slice, y_slice, z_slice = self.slices[idx]
+            map_slice = self.data_array[:, x_slice, y_slice, z_slice]
+        elif self.data_array is not None:
+            map_slice = self.data_array[self.slices[idx]]
+        else:
+            map_slice = None
 
         label_slice = (
             self.label_array[self.slices[idx]] if self.label_array is not None else None
         )
-        weight_slice = (
-            self.weight_array[self.slices[idx]]
-            if self.weight_array is not None
-            else None
-        )
-        data_tensor = torch.tensor(data_slice)
-        label_tensor = torch.tensor(label_slice) if label_slice is not None else None
-        weight_tensor = torch.tensor(weight_slice) if weight_slice is not None else None
 
-        if weight_tensor is None and label_tensor is not None:
-            weight_tensor = torch.where(
-                label_tensor != 0,
-                torch.ones_like(label_tensor),
-                torch.zeros_like(label_tensor),
-            )
+        if not isinstance(map_slice, torch.Tensor):
+            map_tensor = torch.tensor(map_slice)
+        else:
+            map_tensor = map_slice
 
-        if weight_tensor is not None and weight_tensor.shape == data_tensor.shape:
-            # Add weight values to the first dimension of the map tensor
-            data_tensor = torch.cat(
-                (weight_tensor.unsqueeze(0), data_tensor.unsqueeze(0)), dim=0
+        if not isinstance(label_slice, torch.Tensor):
+            label_tensor = (
+                torch.tensor(label_slice) if label_slice is not None else None
             )
+        else:
+            label_tensor = label_slice
 
         self.close_data()
 
+        # self.close_map_objects(self.mapobj, self.label_mapobj, self.weight_mapobj)
+
         return tuple(
-            tensor for tensor in (data_tensor, label_tensor) if tensor is not None
+            tensor for tensor in (map_tensor, label_tensor) if tensor is not None
         )
 
     def get_data(self):
-        self.data_array = self.map_hdf5_store.get(self.id + "_map")
+        self.data_array = self.map_hdf5_store.get(self.id + "_map", to_torch=True)
         if self.label_hdf5_store is not None:
-            self.label_array = self.label_hdf5_store.get(self.id + "_label")
-        if self.weight_hdf5_store is not None:
-            self.weight_array = self.weight_hdf5_store.get(self.id + "_weight")
+            self.label_array = self.label_hdf5_store.get(
+                self.id + "_label", to_torch=True
+            )
 
     def close_data(self):
         self.data_array = None
@@ -978,7 +976,7 @@ class ArrayDataset(AbstractDataset):
         msg = "Transforms are not supported for ArrayDataset."
         raise NotImplementedError(msg)
 
-    def augment(self) -> None:
+    def augment(self) -> dict:
         augment_kwargs = self._augment_keywords_builder()
         if len(self.augments) == 0:
             return {}
@@ -1007,7 +1005,9 @@ class ArrayDataset(AbstractDataset):
 
         if self.data_array is None:
             self.get_data()
-        self.data_shape = self.data_array.shape
+
+        # MyPy shenanigans
+        self.data_shape = self.data_array.shape if self.data_array is not None else None
         if self.label_array is not None:
             assert (
                 self.label_array.shape == self.data_shape
@@ -1035,22 +1035,34 @@ class ArrayDataset(AbstractDataset):
         self.tiles = decompose.tiles
         self.tiles_count = len(self.tiles)
 
-    def save_to_store(self, close_data: bool = True):
-        self.id = self.map_hdf5_store.add_array(
-            self.data_array,
-            self.id + "_map",
-        )
-        self.id = self.id.replace("_map", "")
+    # def save_to_store(self, close_data: bool = True):
+    #     if self.weight_array is None and self.label_array is not None:
+    #         self.weight_array = torch.where(
+    #             self.label_array != 0,
+    #             torch.ones_like(self.label_array),
+    #             torch.zeros_like(self.label_array),
+    #         )
 
-        if self.label_array is not None:
-            self.label_hdf5_store.add_array(
-                self.label_array,
-                self.id + "_label",
-            )
-        if self.weight_array is not None:
-            self.weight_hdf5_store.add_array(
-                self.weight_array,
-                self.id + "_weight",
-            )
-        if close_data:
-            self.close_data()
+    #     if (
+    #         self.weight_array is not None
+    #         and self.weight_array.shape == self.data_array.shape
+    #     ):
+    #         # Add weight values to the first dimension of the map tensor
+    #         self.data_array = torch.cat(
+    #             (self.weight_array.unsqueeze(0), self.data_array.unsqueeze(0)), dim=0
+    #         )
+
+    #     self.id = self.map_hdf5_store.add_array(
+    #         self.data_array,
+    #         self.id + "_map",
+    #     )
+    #     self.id = self.id.replace("_map", "")
+
+    #     if self.label_array is not None:
+    #         self.label_hdf5_store.add_array(
+    #             self.label_array,
+    #             self.id + "_label",
+    #         )
+
+    #     if close_data:
+    #         self.close_data()
