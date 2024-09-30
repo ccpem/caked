@@ -5,7 +5,8 @@ from pathlib import Path
 import torch
 
 from caked.dataloader import MapDataLoader, MapDataset
-from caked.utils import duplicate_and_augment_from_hdf5
+from caked.hdf5 import HDF5DataStore
+from caked.utils import add_dataset_to_HDF5, duplicate_and_augment_from_hdf5
 
 ORIG_DIR = Path.cwd()
 
@@ -37,30 +38,51 @@ def test_map_dataset(test_data_single_mrc_dir):
 
 
 def test_slices(test_data_single_mrc_dir):
+    hdf5_store = HDF5DataStore("test.hdf5", cache_size=1)
+
     test_map_dataset = MapDataset(
         path=next(test_data_single_mrc_dir.glob(f"*{DATATYPE_MRC}")),
         transforms=[],
         augments=[],
+        map_hdf5_store=hdf5_store,
+    )
+    test_map_dataset.load_map_objects()
+
+    add_dataset_to_HDF5(
+        test_map_dataset.mapobj.data,
+        None,
+        None,
+        "realmap",
+        hdf5_store,
     )
     slice_ = test_map_dataset.__getitem__(0)[0]
 
     assert isinstance(slice_, torch.Tensor)
     assert len(test_map_dataset) == 4
-    assert slice_.shape == (32, 32, 32)
+    assert slice_.shape == (2, 32, 32, 32)
 
 
 def test_transforms(test_data_single_mrc_dir):
+    hdf5_store = HDF5DataStore("test.hdf5", cache_size=1)
     test_map_dataset = MapDataset(
         path=next(test_data_single_mrc_dir.glob(f"*{DATATYPE_MRC}")),
+        map_hdf5_store=hdf5_store,
         transforms=TRANSFORM_ALL,
         augments=[],
     )
     test_map_dataset.load_map_objects()
     test_map_dataset.transform()
+    add_dataset_to_HDF5(
+        test_map_dataset.mapobj.data,
+        None,
+        None,
+        "realmap",
+        hdf5_store,
+    )
     slice_ = test_map_dataset.__getitem__(0)[0]
 
     assert len(test_map_dataset) == 64
-    assert slice_.shape == (32, 32, 32)
+    assert slice_.shape == (2, 32, 32, 32)
 
 
 def test_dataloader_load_to_HDF5_file(test_data_single_mrc_temp_dir):
