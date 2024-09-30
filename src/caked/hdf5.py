@@ -6,9 +6,20 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from collections import OrderedDict
+
+import torch
+
 
 class HDF5DataStore:
-    def __init__(self, save_path: str, use_temp_dir: bool = True, batch_size: int = 10):
+    def __init__(
+        self,
+        save_path: str | Path,
+        use_temp_dir: bool = True,
+        cache: LRUCache = None,
+        batch_size: int = 10,
+        cache_size: int = 5,
+    ):
         """
         Object to store data in HDF5 format. If use_temp_dir is True, the file is saved
         in a temporary directory and deleted when the object is deleted. This is useful
@@ -21,6 +32,7 @@ class HDF5DataStore:
 
 
         """
+        save_path = Path(save_path)
         if use_temp_dir:
             self.temp_dir_obj = tempfile.TemporaryDirectory()
             self.temp_dir = Path(self.temp_dir_obj.name)
@@ -32,6 +44,10 @@ class HDF5DataStore:
         self.batch_size = batch_size
         self.counter = 0
         self.file = None
+        if cache is None:
+            self.cache = LRUCache(cache_size)
+        else:
+            self.cache = cache
 
     def open(self, mode: str = "a"):
         if self.file is None:
@@ -51,10 +67,18 @@ class HDF5DataStore:
         with h5py.File(self.save_path, "r") as f:
             return np.array(f[key])
 
-    def get(self, key: str, default=None):
+    def get(self, key: str, default=None, to_torch: bool = False):
         try:
+            if key in self.cache:
+                return self.cache.get(key)
             with h5py.File(self.save_path, "r") as f:
-                return np.array(f[key])
+                if to_torch:
+                    arr = torch.from_numpy(np.array(f[key])).clone().detach()
+
+                else:
+                    arr = np.array(f[key])
+                self.cache.put(key, arr)
+                return arr
         except KeyError:
             return default
 
@@ -66,7 +90,7 @@ class HDF5DataStore:
     ) -> str:
         if self.check_name_in_store(dataset_name):
             dataset_name = self._add_number_to_dataset_name(dataset_name)
-        with h5py.File(self.save_path, "a") as f:  # Open in append mode
+        with h5py.File(self.save_path, "a") as f:
             f.create_dataset(
                 dataset_name, data=array, compression=compression, chunks=True
             )
@@ -105,6 +129,46 @@ class HDF5DataStore:
         with h5py.File(self.save_path, "r") as f:
             return list(f.keys())
 
-    def values(self):
+    def values(self, to_torch: bool = False):
         with h5py.File(self.save_path, "r") as f:
-            return [np.array(f[key]) for key in f.keys()]
+            for key in f.keys():
+                if to_torch:
+                    yield torch.from_numpy(np.array(f[key]))
+                else:
+                    yield np.array(f[key])
+
+
+class LRUCache:
+    def __init__(self, max_memory_gb: float):
+        self.max_memory_bytes = max_memory_gb * 1024**3
+        self.cache = OrderedDict()
+        self.current_memory_usage = 0
+
+    def get_memory_usage(self, obj) -> int:
+        if isinstance(obj, np.ndarray):
+            return obj.nbytes
+        if isinstance(obj, torch.Tensor):
+            return obj.element_size() * obj.nelement()
+        return 0
+
+    def get(self, key: str):
+        if key not in self.cache:
+            return None
+        self.cache.move_to_end(key)
+        return self.cache[key]
+
+    def put(self, key: str, value):
+        if key in self.cache:
+            self.current_memory_usage -= self.get_memory_usage(self.cache[key])
+            self.cache.move_to_end(key)
+        self.cache[key] = value
+        self.current_memory_usage += self.get_memory_usage(value)
+        self.evict_if_needed()
+
+    def evict_if_needed(self):
+        while self.current_memory_usage > self.max_memory_bytes:
+            _, evicted_value = self.cache.popitem(last=False)
+            self.current_memory_usage -= self.get_memory_usage(evicted_value)
+
+    def __contains__(self, key):
+        return key in self.cache
