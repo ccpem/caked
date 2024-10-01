@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 
 from caked.dataloader import MapDataLoader, MapDataset
-from caked.hdf5 import HDF5DataStore
+from caked.hdf5 import HDF5DataStore, LRUCache
 from caked.utils import add_dataset_to_HDF5, duplicate_and_augment_from_hdf5
 
 ORIG_DIR = Path.cwd()
@@ -177,3 +177,30 @@ def test_dataloader_load_multi_process(test_data_single_mrc_temp_dir):
     assert test_map_dataloader.dataset.datasets[0].map_hdf5_store.save_path.exists()
 
     # test_map_dataloader.
+
+
+def test_lru_cache(test_data_single_mrc_dir):
+    cache = LRUCache(1)
+    hdf5_store = HDF5DataStore("test.hdf5", cache=cache)
+
+    test_map_dataset = MapDataset(
+        path=next(test_data_single_mrc_dir.glob(f"*{DATATYPE_MRC}")),
+        transforms=[],
+        augments=[],
+        map_hdf5_store=hdf5_store,
+    )
+    test_map_dataset.load_map_objects()
+
+    add_dataset_to_HDF5(
+        test_map_dataset.mapobj.data,
+        None,
+        None,
+        "realmap",
+        hdf5_store,
+    )
+
+    assert "realmap_map" not in hdf5_store.cache
+
+    _ = test_map_dataset.__getitem__(0)[0]
+
+    assert "realmap_map" in hdf5_store.cache
