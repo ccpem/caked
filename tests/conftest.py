@@ -34,10 +34,10 @@ def test_data_single_mrc_dir():
 @pytest.fixture()
 def test_data_single_mrc_temp_dir():
     with TemporaryDirectory() as temp_dir:
-        temp_dir = Path(temp_dir)
+        temp_dir_path = Path(temp_dir)
         test_data_single_mrc_dir = Path(
             Path(__file__).parent.joinpath("testdata_mrc", "mrc")
         )
         for file in test_data_single_mrc_dir.glob("*"):
-            shutil.copy(file, temp_dir)
-        yield temp_dir
+            shutil.copy(file, temp_dir_path)
+        yield temp_dir_path

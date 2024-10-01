@@ -118,5 +118,7 @@ class Rotation90Augment(AugmentBase):
         data: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
+        _ = data
+        _ = kwargs
         msg = "Rotation90Augment not implemented yet."
         raise NotImplementedError(msg)
