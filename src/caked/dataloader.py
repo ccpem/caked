@@ -682,10 +682,10 @@ class MapDataset(AbstractDataset):
     def __getitem__(
         self, idx
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
-        # This needs to be changhed to hold where the data is stored
-
-        if (not self.slices) or (not self.tiles):
+        if ((not self.slices) or (not self.tiles)) and self.decompose:
             self.generate_tile_indicies()
+        else:
+            self.slices = [(slice(None), slice(None), slice(None))]
 
         map_array = self.map_hdf5_store.get(f"{self.id}_map", to_torch=True)
 
@@ -912,13 +912,13 @@ class ArrayDataset(AbstractDataset):
         return self.tiles_count
 
     def __getitem__(self, idx):
-        if (self.slices is None) or (self.tiles is None):
+        if ((not self.slices) or (not self.tiles)) and self.decompose:
             self.generate_tile_indicies()
+        else:
+            self.slices = [(slice(None), slice(None), slice(None))]
 
         if self.data_array is None:
             self.get_data()
-
-        # the map_slice could be the shape [2, x, y, x] however the slice is only [x, y, z]
 
         # MyPy shenanigans
         if self.data_array is not None and self.data_array.ndim == 4:
