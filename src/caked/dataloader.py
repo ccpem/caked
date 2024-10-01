@@ -722,6 +722,9 @@ class MapDataset(AbstractDataset):
     def load_map_objects(
         self,
     ) -> None:
+        """
+        Load the map objects from the specified paths.
+        """
         self.mapobj = get_mapobjhandle(self.path)
         self.mapobj.all_transforms = True
         if self.label_path is not None:
@@ -738,11 +741,28 @@ class MapDataset(AbstractDataset):
             self.weight_mapobj.all_transforms = False
 
     def close_map_objects(self, *args):
+        """
+        Close the map objects.
+
+        Args:
+            *args: The map objects to close.
+
+
+        """
         for arg in args:
             if arg is not None:
                 arg.close()
 
     def augment(self, close_map_objects) -> dict:
+        """
+        Apply augmentations to the map data.
+
+        Args:
+            close_map_objects (bool): Whether to close the map objects after transformation.
+
+        Returns:
+            dict: The augmentation keywords
+        """
         augment_kwargs = self._augment_keywords_builder()
         if len(self.augments) == 0:
             return {}
@@ -750,9 +770,7 @@ class MapDataset(AbstractDataset):
         self.mapobj, extra_kwargs = ComposeAugment(self.augments)(
             self.mapobj, **augment_kwargs
         )
-        augment_kwargs.update(
-            extra_kwargs
-        )  # update the kwargs with the returned values
+        augment_kwargs.update(extra_kwargs)
 
         self.label_mapobj = ComposeAugment(self.augments)(
             self.label_mapobj, **augment_kwargs
@@ -776,7 +794,6 @@ class MapDataset(AbstractDataset):
             close_map_objects (bool, optional): Whether to close the map objects after transformation. Defaults to True.
 
         """
-        # TODO: Need to see if same transforms are applied to all map objects, maybe just voxel space normalisation
         if self.mapobj is None:
             self.load_map_objects()
         transform_kwargs = self._transform_keywords_builder()
@@ -792,6 +809,14 @@ class MapDataset(AbstractDataset):
             self.close_map_objects(self.mapobj, self.label_mapobj, self.weight_mapobj)
 
     def get_data_shape(self, close_map_objects: bool = True):
+        """
+        Get the shape of the map data, label data, and weight data.
+
+
+        Args:
+            close_map_objects (bool, optional): Whether to close the map objects after transformation. Defaults to True.
+
+        """
         if self.data_shape is not None:
             return
 
@@ -813,6 +838,10 @@ class MapDataset(AbstractDataset):
             self.close_map_objects(self.mapobj, self.label_mapobj, self.weight_mapobj)
 
     def generate_tile_indicies(self):
+        """
+        Generate the tile indices for the map data using the decomposition parameters.
+
+        """
         if self.data_shape is None:
             self.get_data_shape()
 
@@ -858,7 +887,6 @@ class MapDataset(AbstractDataset):
 class ArrayDataset(AbstractDataset):
     """Class to handle loading of data from hdf5 files, to be handled by a DataLoader"""
 
-    # need to add their own and update the dataset id
     def __init__(
         self,
         dataset_id: str,
@@ -896,10 +924,8 @@ class ArrayDataset(AbstractDataset):
         if self.augments is None:
             self.augments = []
 
-        # create an instance of the map dataset so I can use it's functions using composition
         self.__mapdataset = MapDataset(
             path=self.id,
-            # use the attributes from the config object
             **config.__dict__,
         )
 
@@ -947,13 +973,14 @@ class ArrayDataset(AbstractDataset):
 
         self.close_data()
 
-        # self.close_map_objects(self.mapobj, self.label_mapobj, self.weight_mapobj)
-
         return tuple(
             tensor for tensor in (map_tensor, label_tensor) if tensor is not None
         )
 
     def get_data(self):
+        """
+        Retrieve the array data from the HDF5 store.
+        """
         self.data_array = self.map_hdf5_store.get(self.id + "_map", to_torch=True)
         if self.label_hdf5_store is not None:
             self.label_array = self.label_hdf5_store.get(
@@ -961,6 +988,9 @@ class ArrayDataset(AbstractDataset):
             )
 
     def close_data(self):
+        """
+        Close the data arrays.
+        """
         self.data_array = None
         self.label_array = None
         self.weight_array = None
@@ -971,12 +1001,14 @@ class ArrayDataset(AbstractDataset):
     def _transform_keywords_builder(self):
         return self.__mapdataset._transform_keywords_builder()
 
-    # need to do augment
     def transform(self) -> None:
         msg = "Transforms are not supported for ArrayDataset."
         raise NotImplementedError(msg)
 
     def augment(self) -> dict:
+        """
+        Apply augmentations to the array data.
+        """
         augment_kwargs = self._augment_keywords_builder()
         if len(self.augments) == 0:
             return {}
@@ -985,9 +1017,7 @@ class ArrayDataset(AbstractDataset):
             self.data_array, **augment_kwargs
         )
 
-        augment_kwargs.update(
-            extra_kwargs
-        )  # update the kwargs with the returned values
+        augment_kwargs.update(extra_kwargs)
         if self.label_array is not None:
             self.label_array, _ = ComposeAugment(self.augments)(
                 self.label_array, **augment_kwargs
@@ -1000,6 +1030,9 @@ class ArrayDataset(AbstractDataset):
         return augment_kwargs
 
     def get_data_shape(self, close_data: bool = True):
+        """
+        Get the shape of the array data.
+        """
         if self.data_shape is not None:
             return
 
@@ -1021,6 +1054,9 @@ class ArrayDataset(AbstractDataset):
             self.close_data()
 
     def generate_tile_indicies(self):
+        """
+        Generate the tile indices for the array data using the decomposition parameters.
+        """
         if self.data_shape is None:
             self.get_data_shape()
 
@@ -1034,35 +1070,3 @@ class ArrayDataset(AbstractDataset):
         self.slices = decompose.slices
         self.tiles = decompose.tiles
         self.tiles_count = len(self.tiles)
-
-    # def save_to_store(self, close_data: bool = True):
-    #     if self.weight_array is None and self.label_array is not None:
-    #         self.weight_array = torch.where(
-    #             self.label_array != 0,
-    #             torch.ones_like(self.label_array),
-    #             torch.zeros_like(self.label_array),
-    #         )
-
-    #     if (
-    #         self.weight_array is not None
-    #         and self.weight_array.shape == self.data_array.shape
-    #     ):
-    #         # Add weight values to the first dimension of the map tensor
-    #         self.data_array = torch.cat(
-    #             (self.weight_array.unsqueeze(0), self.data_array.unsqueeze(0)), dim=0
-    #         )
-
-    #     self.id = self.map_hdf5_store.add_array(
-    #         self.data_array,
-    #         self.id + "_map",
-    #     )
-    #     self.id = self.id.replace("_map", "")
-
-    #     if self.label_array is not None:
-    #         self.label_hdf5_store.add_array(
-    #             self.label_array,
-    #             self.id + "_label",
-    #         )
-
-    #     if close_data:
-    #         self.close_data()
