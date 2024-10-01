@@ -682,10 +682,13 @@ class MapDataset(AbstractDataset):
     def __getitem__(
         self, idx
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
-        if ((not self.slices) or (not self.tiles)) and self.decompose:
+        if (not self.slices or not self.tiles) and self.decompose:
             self.generate_tile_indicies()
-        else:
+        elif (not self.slices or not self.tiles) and not self.decompose:
             self.slices = [(slice(None), slice(None), slice(None))]
+        else:
+            self.slices = self.slices
+            self.tiles = self.tiles
 
         map_array = self.map_hdf5_store.get(f"{self.id}_map", to_torch=True)
 
@@ -938,10 +941,13 @@ class ArrayDataset(AbstractDataset):
         return self.tiles_count
 
     def __getitem__(self, idx):
-        if ((not self.slices) or (not self.tiles)) and self.decompose:
+        if (not self.slices or not self.tiles) and self.decompose:
             self.generate_tile_indicies()
-        else:
+        elif (not self.slices or not self.tiles) and not self.decompose:
             self.slices = [(slice(None), slice(None), slice(None))]
+        else:
+            self.slices = self.slices
+            self.tiles = self.tiles
 
         if self.data_array is None:
             self.get_data()
