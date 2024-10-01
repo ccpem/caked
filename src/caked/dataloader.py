@@ -116,11 +116,11 @@ class DiskDataLoader(AbstractDataLoader):
         if len(self.classes) == 0:
             self.classes = ids
         else:
-            class_check = np.in1d(self.classes, ids)
+            class_check = np.isin(self.classes, ids)
             if not np.all(class_check):
                 msg = f"Not all classes in the list are present in the directory. Missing classes: {np.asarray(self.classes)[~class_check]}"
                 raise RuntimeError(msg)
-            class_check = np.in1d(ids, self.classes)
+            class_check = np.isin(ids, self.classes)
             if not np.all(class_check):
                 logging.basicConfig(format="%(message)s", level=logging.INFO)
                 logging.info(
@@ -133,7 +133,7 @@ class DiskDataLoader(AbstractDataLoader):
             Path(datapath) / p
             for p in paths
             for c in self.classes
-            if c in p.split("_")[0]
+            if c == p.split("_")[0]
         ]
         if self.dataset_size is not None:
             paths = paths[: self.dataset_size]
@@ -180,7 +180,7 @@ class DiskDataLoader(AbstractDataLoader):
         for i in transforms:
             if i.startswith("rescale"):
                 transforms.remove(i)
-                rescale = int(i.split("=")[-1])
+                rescale = int(float(i.split("=")[-1]))
 
         if len(transforms) > 0:
             msg = f"The following transformations are not supported: {transforms}"
