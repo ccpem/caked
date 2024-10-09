@@ -656,8 +656,10 @@ class MapDataset(AbstractDataset):
         self.label_mapobj: MapObjHandle | None = None
         self.weight_mapobj: MapObjHandle | None = None
 
+        cshape = kwargs.get("cshape", 32)
+        margin = kwargs.get("margin", 8)
         if self.decompose_kwargs is None:
-            self.decompose_kwargs = {"cshape": 32, "margin": 8}
+            self.decompose_kwargs = {"cshape": cshape, "margin": margin}
 
         if self.transform_kwargs is None:
             self.transform_kwargs = {}

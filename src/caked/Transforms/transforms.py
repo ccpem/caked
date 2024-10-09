@@ -124,7 +124,7 @@ class MapObjectVoxelNormalisation(TransformBase):
     ) -> tuple[MapObjHandle, dict]:
         # This is needed to do the normalisation but I need to check if label obj is affected by this
 
-        vox = kwargs.get("vox", 1)
+        vox = kwargs.get("vox", 1.0)
         vox_min = kwargs.get("vox_min", 0.95)
         vox_max = kwargs.get("vox_max", 1.05)
 
@@ -141,11 +141,10 @@ class MapObjectVoxelNormalisation(TransformBase):
         if voxz > vox_max or voxz < vox_min:
             sample[0] = int(mapobj.dim[2] / vox)
         sample = tuple(sample)
-
         interpolate_to_grid(
             mapobj,
             sample,
-            vox,
+            (vox, vox, vox),
             mapobj.origin,
             inplace=True,
             prefilter_input=mapobj.all_transforms,
