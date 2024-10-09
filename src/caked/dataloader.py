@@ -595,7 +595,7 @@ class MapDataset(AbstractDataset):
     ) -> None:
         """
         A dataset class for loading map data, alongside the corresponding class labels and weights.
-        The map data is loaded from the disk and is decomposed into a set of tiles. These tiles are
+        The map data is loaded from the disk and is decomposed into a set of slice_indicies. These slice_indicies are
         then returned when indexing the dataset.
 
         Args:
@@ -606,7 +606,7 @@ class MapDataset(AbstractDataset):
             label_hdf5_store (Optional[HDF5DataStore]): The HDF5 store for the label data. Defaults to None.
             transforms (Optional[List[str]]): The transformations to apply to the data.
             augments (Optional[List[str]]): The augmentations to apply to the data.
-            decompose (bool): Whether to decompose the data into tiles. Defaults to True.
+            decompose (bool): Whether to decompose the data into slices and slice_indicies. Defaults to True.
             decompose_kwargs (Optional[Dict[str, int]]): The decomposition parameters. Defaults to None.
             transform_kwargs (Optional[Dict]): The transformation parameters. Defaults to None.
 
@@ -617,8 +617,8 @@ class MapDataset(AbstractDataset):
             label_mapobj (Optional[MapObjHandle]): The map object handle for the label data. Defaults to None.
             weight_mapobj (Optional[MapObjHandle]): The map object handle for the weight data. Defaults to None.
             slices (Optional[List[Tuple]]): The slices of the data. Defaults to None.
-            tiles (Optional): The tiles of the data. Defaults to None.
-            tiles_count (int): The number of tiles. Defaults to 0.
+            slice_indicies (Optional): The slice_indicies of the data. Defaults to None.
+            slices_count (int): The number of slice_indicies. Defaults to 0.
 
         """
         config = DatasetConfig()
@@ -643,8 +643,8 @@ class MapDataset(AbstractDataset):
             "label_hdf5_store", config.label_hdf5_store
         )
         self.slices: list = kwargs.get("slices", [])
-        self.tiles: list = kwargs.get("tiles", [])
-        self.tiles_count = kwargs.get("tiles_count", config.tiles_count)
+        self.slice_indicies: list = kwargs.get("slice_indicies", [])
+        self.slices_count = kwargs.get("slices_count", config.slices_count)
         self.transforms = kwargs.get("transforms", config.transforms)
         self.augments = kwargs.get("augments", config.augments)
         self.decompose_kwargs = kwargs.get("decompose_kwargs", config.decompose_kwargs)
@@ -674,23 +674,23 @@ class MapDataset(AbstractDataset):
             )
 
     def __len__(self):
-        if self.tiles_count == 0 and self.decompose:
+        if self.slices_count == 0 and self.decompose:
             self.generate_tile_indicies()
-        elif self.tiles_count == 0:
-            self.tiles_count = 1
+        elif self.slices_count == 0:
+            self.slices_count = 1
 
-        return self.tiles_count
+        return self.slices_count
 
     def __getitem__(
         self, idx
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
-        if (not self.slices or not self.tiles) and self.decompose:
+        if (not self.slices or not self.slice_indicies) and self.decompose:
             self.generate_tile_indicies()
-        elif (not self.slices or not self.tiles) and not self.decompose:
+        elif (not self.slices or not self.slice_indicies) and not self.decompose:
             self.slices = [(slice(None), slice(None), slice(None))]
         else:
             self.slices = self.slices
-            self.tiles = self.tiles
+            self.slice_indicies = self.slice_indicies
 
         map_array = self.map_hdf5_store.get(f"{self.id}_map", to_torch=True)
 
@@ -858,8 +858,8 @@ class MapDataset(AbstractDataset):
         )
 
         self.slices = decompose.slices
-        self.tiles = decompose.tiles
-        self.tiles_count = len(self.tiles)
+        self.slice_indicies = decompose.slice_indicies
+        self.slices_count = len(self.slice_indicies)
 
     def _transform_keywords_builder(self):
         keywords = {}
@@ -890,7 +890,16 @@ class MapDataset(AbstractDataset):
 
 
 class ArrayDataset(AbstractDataset):
-    """Class to handle loading of data from hdf5 files, to be handled by a DataLoader"""
+    """Class to handle loading of data from hdf5 files, to be handled by a DataLoader
+
+    Args:
+        dataset_id (str): The dataset ID.
+        data_array (np.ndarray): The data array.
+        label_array (np.ndarray, optional): The label array. Defaults to None.
+        weight_array (np.ndarray, optional): The weight array. Defaults to None.
+
+
+    """
 
     def __init__(
         self,
@@ -910,8 +919,8 @@ class ArrayDataset(AbstractDataset):
         self.weight_array = weight_array
 
         self.slices = kwargs.get("slices", config.slices)
-        self.tiles = kwargs.get("tiles", config.tiles)
-        self.tiles_count = kwargs.get("tiles_count", config.tiles_count)
+        self.slice_indicies = kwargs.get("slice_indicies", config.slice_indicies)
+        self.slices_count = kwargs.get("slices_count", config.slices_count)
         self.augments = kwargs.get("augments", config.augments)
         self.decompose = kwargs.get("decompose", config.decompose)
         self.data_shape: tuple | None = None
@@ -935,21 +944,21 @@ class ArrayDataset(AbstractDataset):
         )
 
     def __len__(self):
-        if self.tiles_count == 0 and self.decompose:
+        if self.slices_count == 0 and self.decompose:
             self.generate_tile_indicies()
-        elif self.tiles_count == 0:
-            self.tiles_count = 1
+        elif self.slices_count == 0:
+            self.slices_count = 1
 
-        return self.tiles_count
+        return self.slices_count
 
     def __getitem__(self, idx):
-        if (not self.slices or not self.tiles) and self.decompose:
+        if (not self.slices or not self.slice_indicies) and self.decompose:
             self.generate_tile_indicies()
-        elif (not self.slices or not self.tiles) and not self.decompose:
+        elif (not self.slices or not self.slice_indicies) and not self.decompose:
             self.slices = [(slice(None), slice(None), slice(None))]
         else:
             self.slices = self.slices
-            self.tiles = self.tiles
+            self.slice_indicies = self.slice_indicies
 
         if self.data_array is None:
             self.get_data()
@@ -1076,5 +1085,5 @@ class ArrayDataset(AbstractDataset):
         )
 
         self.slices = decompose.slices
-        self.tiles = decompose.tiles
-        self.tiles_count = len(self.tiles)
+        self.slice_indicies = decompose.slice_indicies
+        self.slices_count = len(self.slice_indicies)

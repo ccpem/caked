@@ -67,6 +67,10 @@ class HDF5DataStore:
         with h5py.File(self.save_path, "r") as f:
             return np.array(f[key])
 
+    def __iter__(self):
+        with h5py.File(self.save_path, "r") as f:
+            yield from f
+
     def get(self, key: str, default=None, to_torch: bool = False):
         try:
             if key in self.cache:
