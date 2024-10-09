@@ -112,5 +112,5 @@ class DatasetConfig:
     label_hdf5_store: HDF5DataStore | None = None
     weight_hdf5_store: HDF5DataStore | None = None
     slices: list[tuple[int, int, int]] | None = None
-    tiles = None
-    tiles_count: int = 0
+    slice_indicies = None
+    slices_count: int = 0

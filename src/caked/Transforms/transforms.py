@@ -76,7 +76,7 @@ class DecomposeToSlices:
     def __init__(self, map_shape: tuple, **kwargs):
         step = kwargs.get("step", 1)
         cshape = kwargs.get("cshape", 1)
-        slices, tiles = [], []
+        slices, slice_indicies = [], []
 
         for i in range(0, map_shape[0], step):
             for j in range(0, map_shape[1], step):
@@ -94,7 +94,7 @@ class DecomposeToSlices:
                             slice(k, k + cshape),
                         )
                     )
-                    tiles.append((i, j, k))
+                    slice_indicies.append((i, j, k))
 
                     ishape = (i + cshape) - i
                     jshape = (j + cshape) - j
@@ -104,7 +104,7 @@ class DecomposeToSlices:
                         print(ishape, jshape, kshape)
 
         self.slices = slices
-        self.tiles = tiles
+        self.slice_indicies = slice_indicies
 
 
 class MapObjectVoxelNormalisation(TransformBase):
