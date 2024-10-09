@@ -69,8 +69,7 @@ class HDF5DataStore:
 
     def __iter__(self):
         with h5py.File(self.save_path, "r") as f:
-            for key in f:
-                yield key
+            yield from f
 
     def get(self, key: str, default=None, to_torch: bool = False):
         try:
