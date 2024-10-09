@@ -132,9 +132,9 @@ def test_add_duplicate_dataset_to_dataloader(test_data_single_mrc_temp_dir):
     hdf5_store = test_map_dataloader.dataset.datasets[0].map_hdf5_store
 
     assert len(hdf5_store.keys()) == 3
-    assert "realmap_map" in hdf5_store.keys()  # noqa: SIM118
-    assert "1--realmap_map" in hdf5_store.keys()  # noqa: SIM118
-    assert "2--realmap_map" in hdf5_store.keys()  # noqa: SIM118
+    assert "realmap_map" in hdf5_store
+    assert "1--realmap_map" in hdf5_store
+    assert "2--realmap_map" in hdf5_store
 
 
 def test_add_duplicate_dataset_to_dataloader_with_augments(
@@ -154,8 +154,8 @@ def test_add_duplicate_dataset_to_dataloader_with_augments(
     )
     hdf5_store = test_map_dataloader.dataset.datasets[0].map_hdf5_store
     assert len(hdf5_store.keys()) == 2
-    assert "realmap_map" in hdf5_store.keys()  # noqa: SIM118
-    assert "1--realmap_map" in hdf5_store.keys()  # noqa: SIM118
+    assert "realmap_map" in hdf5_store
+    assert "1--realmap_map" in hdf5_store
 
     assert len(test_map_dataloader.dataset.datasets[0]) == 64
     assert len(test_map_dataloader.dataset.datasets[1]) == 64
