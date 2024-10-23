@@ -98,6 +98,22 @@ def test_dataloader_load_to_HDF5_file(test_data_single_mrc_temp_dir):
     assert test_map_dataloader.dataset.datasets[0].map_hdf5_store.save_path.exists()
 
 
+def test_dataloader_load_and_decompose(test_data_single_mrc_temp_dir):
+    test_map_dataloader = MapDataLoader()
+    test_map_dataloader.load(
+        datapath=test_data_single_mrc_temp_dir,
+        datatype=DATATYPE_MRC,
+        cshape=16,
+    )
+
+    assert test_map_dataloader is not None
+    assert isinstance(test_map_dataloader, MapDataLoader)
+    test_map_dataset = test_map_dataloader.dataset.datasets[0]
+    slice_ = test_map_dataset.__getitem__(0)[0]
+
+    assert slice_.shape == (2, 16, 16, 16)
+
+
 def test_dataloader_load_to_HDF5_file_with_transforms(test_data_single_mrc_temp_dir):
     test_map_dataloader = MapDataLoader(
         transformations=TRANSFORM_ALL,

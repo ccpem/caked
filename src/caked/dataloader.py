@@ -302,6 +302,7 @@ class MapDataLoader(AbstractDataLoader):
         weight_path: str | Path | None = None,
         use_gpu: bool = False,
         num_workers: int = 1,
+        **kwargs,
     ) -> None:
         """
         Load the data from the specified path and data type.
@@ -313,6 +314,7 @@ class MapDataLoader(AbstractDataLoader):
             weight_path (str | Path, optional): The path to the directory containing the weights. Defaults to None.
             multi_process (bool, optional): Whether to use multi-processing. Defaults to False.
             use_gpu (bool, optional): Whether to use the GPU. Defaults to False.
+            kwargs: Additional keyword arguments used for MapDataSet
 
         Returns:
             None
@@ -379,6 +381,7 @@ class MapDataLoader(AbstractDataLoader):
             self.decompose,
             map_hdf5_store,
             label_hdf5_store,
+            **kwargs,
         )
 
         self.dataset = ConcatDataset(datasets)
@@ -656,8 +659,10 @@ class MapDataset(AbstractDataset):
         self.label_mapobj: MapObjHandle | None = None
         self.weight_mapobj: MapObjHandle | None = None
 
+        cshape = kwargs.get("cshape", 32)
+        margin = kwargs.get("margin", 8)
         if self.decompose_kwargs is None:
-            self.decompose_kwargs = {"cshape": 32, "margin": 8}
+            self.decompose_kwargs = {"cshape": cshape, "margin": margin}
 
         if self.transform_kwargs is None:
             self.transform_kwargs = {}
@@ -667,9 +672,10 @@ class MapDataset(AbstractDataset):
         self.transforms = [] if self.transforms is None else self.transforms
 
         if not self.decompose_kwargs.get("step", False):
-            self.decompose_kwargs["step"] = self.decompose_kwargs.get("cshape", 1) - (
+            step = self.decompose_kwargs.get("cshape", 1) - (
                 2 * self.decompose_kwargs.get("margin")
             )
+            self.decompose_kwargs["step"] = step if step != 0 else 1
 
     def __len__(self):
         if self.slices_count == 0 and self.decompose:
@@ -693,7 +699,10 @@ class MapDataset(AbstractDataset):
         map_array = self.map_hdf5_store.get(f"{self.id}_map", to_torch=True)
 
         if map_array.ndim == 4:
+            print(len(self.slices))
+            print(idx)
             x_slice, y_slice, z_slice = self.slices[idx]
+            print(x_slice, y_slice, z_slice)
             map_slice = map_array[:, x_slice, y_slice, z_slice]
         else:
             map_slice = map_array[self.slices[idx]]
