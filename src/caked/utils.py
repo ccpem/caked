@@ -22,6 +22,7 @@ def process_datasets(
     decompose: bool,
     raw_map_HDF5: HDF5DataStore,
     label_HDF5: HDF5DataStore | None = None,
+    **kwargs,
 ):
     """
     Process multiple datasets in parallel.
@@ -52,6 +53,7 @@ def process_datasets(
                 decompose,
                 raw_map_HDF5,
                 label_HDF5,
+                **kwargs,
             )
             for path, label_path, weight_path in zip(paths, label_paths, weight_paths)
         ]
@@ -81,6 +83,7 @@ def process_map_dataset(
     decompose: bool,
     map_hdf5: HDF5DataStore,
     label_hdf5: HDF5DataStore | None,
+    **kwargs,
 ):
     """
     Process a single map dataset, applying transformations and augmentations, closes the map objects.
@@ -109,15 +112,16 @@ def process_map_dataset(
         decompose=decompose,
         map_hdf5_store=map_hdf5,
         label_hdf5_store=label_hdf5,
+        **kwargs,
     )
     map_dataset.transform(close_map_objects=False)
     map_dataset.augment(close_map_objects=False)
     result = {
         "map_data": map_dataset.mapobj.data,
         "label_data": map_dataset.label_mapobj.data if label_path is not None else None,
-        "weight_data": map_dataset.weight_mapobj.data
-        if weight_path is not None
-        else None,
+        "weight_data": (
+            map_dataset.weight_mapobj.data if weight_path is not None else None
+        ),
     }
 
     map_dataset.close_map_objects()

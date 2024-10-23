@@ -96,13 +96,9 @@ class DecomposeToSlices:
                     )
                     slice_indicies.append((i, j, k))
 
-                    ishape = (i + cshape) - i
-                    jshape = (j + cshape) - j
-                    kshape = (k + cshape) - k
-
-                    if ishape != 32 or jshape != 32 or kshape != 32:
-                        print(ishape, jshape, kshape)
-
+        if len(slice_indicies) == 0:
+            msg = "No slices were generated, please check the step and cshape values."
+            raise ValueError(msg)
         self.slices = slices
         self.slice_indicies = slice_indicies
 
