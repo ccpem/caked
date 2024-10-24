@@ -699,10 +699,7 @@ class MapDataset(AbstractDataset):
         map_array = self.map_hdf5_store.get(f"{self.id}_map", to_torch=True)
 
         if map_array.ndim == 4:
-            print(len(self.slices))
-            print(idx)
             x_slice, y_slice, z_slice = self.slices[idx]
-            print(x_slice, y_slice, z_slice)
             map_slice = map_array[:, x_slice, y_slice, z_slice]
         else:
             map_slice = map_array[self.slices[idx]]
