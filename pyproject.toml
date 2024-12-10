@@ -28,7 +28,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 
-dependencies = ["torch", "numpy", "pandas", "mrcfile", "torchvision", "scipy", "pyarrow", "ccpem-utils", "h5py", "psutil"]
+dependencies = ["torch", "numpy", "pandas", "mrcfile", "torchvision", "scipy ~= 1.9.3", "pyarrow", "ccpem-utils", "h5py", "psutil", "pillow ~= 9.3"]
 
 [project.optional-dependencies]
 test = [
