@@ -12,6 +12,9 @@ from caked.hdf5 import HDF5DataStore
 from caked.Wrappers import none_return_none
 
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 def process_datasets(
     num_workers: int,
     paths: list[str],
@@ -282,3 +285,36 @@ def get_max_memory() -> int:
     mem_info = psutil.virtual_memory()
     max_memory_gb = mem_info.total / (1024**3)  # Convert bytes to GB
     return int(max_memory_gb // 1)
+
+
+
+
+def find_background_slices_to_skip(
+    dataloader,
+    class_labels,
+    background_limit: float = 0.3,
+) -> None:
+    to_skip = {}
+
+    for dataset in dataloader.dataset.datasets:
+        counts_tensor = torch.zeros(len(class_labels), dtype=torch.int32, device=DEVICE)
+        for index in range(len(dataset)):
+            _, label_tensor = dataset[index]
+            label_tensor = label_tensor.to(DEVICE)
+
+            label_tensor = label_tensor.flatten().type(torch.int64)
+
+            if label_tensor.numel() == 0:
+                continue
+            counts_tensor.zero_()
+            counts_tensor.scatter_add_(
+                0, label_tensor, torch.ones_like(label_tensor, dtype=torch.int32)
+            )
+
+            total = label_tensor.size(0)
+            background_counts = (counts_tensor[0] / total).item()
+
+            if background_counts > background_limit:
+                if dataset.id not in to_skip:
+                    to_skip[dataset.id] = []
+                to_skip[dataset.id].append(index)

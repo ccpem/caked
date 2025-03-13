@@ -27,6 +27,7 @@ from caked.utils import (
     get_max_memory,
     get_sorted_paths,
     process_datasets,
+    find_background_slices_to_skip,
 )
 
 try:
@@ -302,6 +303,7 @@ class MapDataLoader(AbstractDataLoader):
         weight_path: str | Path | None = None,
         use_gpu: bool = False,
         num_workers: int = 1,
+        background_filter: float | None = None,
         **kwargs,
     ) -> None:
         """
@@ -337,7 +339,7 @@ class MapDataLoader(AbstractDataLoader):
         map_hdf5_store = HDF5DataStore(
             datapath.joinpath("raw_map_data.h5"),
             cache=cache,
-        )  # TODO: cache size should be a parameter and 40 is for my own testing
+        )
 
         label_hdf5_store = (
             HDF5DataStore(label_path.joinpath("label_data.h5"), cache=cache)
@@ -392,6 +394,11 @@ class MapDataLoader(AbstractDataLoader):
                 np.unique(label_data) for label_data in label_hdf5_store.values()
             ]
             self.classes = np.unique(np.concatenate(unique_labels).flatten()).tolist()
+
+        if background_filter is not None:
+            self.filter_slices_under_background_limit(
+                self.classes, background_limit=background_filter
+            )
 
     def process(self):
         """ """
@@ -471,6 +478,41 @@ class MapDataLoader(AbstractDataLoader):
             num_workers=0,
             shuffle=True,
         )
+
+    def filter_slices_under_background_limit(
+        self,
+        class_labels,
+        background_limit: float = 0.3,
+    ):
+        """
+        Find the slices in the dataloader that contain only background and remove them.
+
+        :param class_label_handler: Class label handler
+
+        :return: Empty tile
+        """
+        to_skip = find_background_slices_to_skip(
+            self,
+            class_labels,
+            background_limit=background_limit,
+        )
+
+        for dataset in self.dataset.datasets:
+            if dataset.id in to_skip:
+                dataset.slice_indicies = [
+                    tile
+                    for i, tile in enumerate(dataset.slice_indicies)
+                    if i not in to_skip[dataset.id]
+                ]
+
+                dataset.slices = [
+                    slice_
+                    for i, slice_ in enumerate(dataset.slices)
+                    if i not in to_skip[dataset.id]
+                ]
+                dataset.slices_count = len(dataset.slice_indicies)
+
+        self.dataset.cumulative_sizes = self.dataset.cumsum(self.dataset.datasets)
 
 
 class DiskDataset(AbstractDataset):
@@ -649,6 +691,8 @@ class MapDataset(AbstractDataset):
         self.slice_indicies: list = kwargs.get("slice_indicies", [])
         self.slices_count = kwargs.get("slices_count", config.slices_count)
         self.transforms = kwargs.get("transforms", config.transforms)
+        if not config.train:
+            self.augments = None
         self.augments = kwargs.get("augments", config.augments)
         self.decompose_kwargs = kwargs.get("decompose_kwargs", config.decompose_kwargs)
         self.transform_kwargs = kwargs.get("transform_kwargs", config.transform_kwargs)
