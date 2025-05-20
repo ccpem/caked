@@ -39,6 +39,8 @@ test = [
 dev = [
   "pytest >=6",
   "pytest-cov >=3",
+  "sphinx >=5.0.0",
+  "pydata-sphinx-theme >=0.7",
 ]
 
 [project.urls]
