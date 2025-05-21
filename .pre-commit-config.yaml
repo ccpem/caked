@@ -49,3 +49,14 @@ repos:
     rev: "v0.9.0.5"
     hooks:
       - id: shellcheck
+
+  - repo: local
+    hooks:
+      - id: pytest
+        stages: [commit, push]
+        types: [python]
+        name: pytest
+        entry: pytest
+        pass_filenames: false
+        language: system
+        always_run: true

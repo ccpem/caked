@@ -5,9 +5,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from tests import testdata_mrc, testdata_npy
 
 from caked.dataloader import DiskDataLoader, DiskDataset
+from tests import testdata_mrc, testdata_npy
 
 ORIG_DIR = Path.cwd()
 TEST_DATA_MRC = Path(testdata_mrc.__file__).parent
