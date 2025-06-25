@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 [project]
 name = "CAKED"
-version = "0.1.6"  # need to also update version in src/caked/__init__.py
+version = "0.1.7"  # need to also update version in src/caked/__init__.py
 authors = [
   { name = "Bea Costa Gomes", email = "bcostagomes@turing.ac.uk" },
 ]
