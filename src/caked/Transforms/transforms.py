@@ -111,7 +111,7 @@ class DecomposeToSlices:
         padding: bool = True,
         padding_value: float = 0.0,
         skip_small: bool = False,
-    ):
+    ) -> list[np.ndarray]:
         """
         Select slices based on the fraction of classes.
 
@@ -124,26 +124,36 @@ class DecomposeToSlices:
         :param skip_small: (bool) whether to skip small slices (that
             exceed the map array dimensions)
         """
-        for class_value, fraction in class_fraction.items():
-            selected_slices = []
-            selected_indices = []
-            for idx, slc in enumerate(self.slices):
-                slice_data = self.extract_slices(
-                    label_array,
-                    padding=padding,
-                    padding_value=padding_value,
-                    skip_small=skip_small,
-                )
-                if slice_data:
+        
+        selected_slices = []
+        selected_indices = []
+        label_slices = []
+        for idx, slc in enumerate(self.slices):
+            # extract slice array
+            slice_data = self.extract_slices(
+                label_array,
+                padding=padding,
+                padding_value=padding_value,
+                skip_small=skip_small,
+            )
+            # check class fractions
+            filter_slice = False
+            if slice_data:
+                for class_value, fraction in class_fraction.items():
                     class_count = np.sum(slice_data == class_value)
                     total_count = slice_data.size
                     if total_count == 0:
-                        continue
-                    if (class_count / total_count) >= fraction:
-                        selected_slices.append(slc)
-                        selected_indices.append(self.slice_indicies[idx])
+                        break
+                    if (class_count / total_count) < fraction:
+                        filter_slice = True
+                # if not remove slice
+                if not filter_slice:
+                    selected_slices.append(slc)
+                    selected_indices.append(self.slice_indicies[idx])
+                    label_slices.append(slice_data)
             self.slices = selected_slices
             self.slice_indicies = selected_indices
+        return label_slices
 
     def extract_slices(
         self,
