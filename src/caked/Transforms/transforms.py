@@ -99,8 +99,17 @@ class DecomposeToSlices:
                     slice_indicies.append((i, j, k))
 
         if len(slice_indicies) == 0:
-            msg = "No slices were generated, please check the step and cshape values."
-            raise ValueError(msg)
+            msg = ("No slices were generated, please check the step and "
+                   "cshape values. Using single slice for entire map.")
+            print(msg)
+            slices.append(
+                (
+                    slice(0, cshape),
+                    slice(0, cshape),
+                    slice(0, cshape),
+                )
+            )
+            slice_indicies.append((0, 0, 0))
         self.slices = slices
         self.slice_indicies = slice_indicies
 
