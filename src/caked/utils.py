@@ -282,3 +282,25 @@ def get_max_memory() -> int:
     mem_info = psutil.virtual_memory()
     max_memory_gb = mem_info.total / (1024**3)  # Convert bytes to GB
     return int(max_memory_gb // 1)
+
+
+def check_label_map(
+    label_map: np.ndarray,
+    expected_classes: list[int],
+) -> bool:
+    """
+    Check if the label map contains only the expected classes.
+
+    Args:
+        label_map: (np.ndarray) The label map to check.
+        expected_classes: (list[int]) List of sorted expected class labels.
+
+    Returns:
+        bool: True if the label map contains only the expected classes, 
+        False if any unexpected label is present.
+    """
+    unique_classes = np.unique(label_map)
+    set_expected = set(expected_classes)
+    set_unique = set(unique_classes)
+    return set_unique.issubset(set_expected)
+

@@ -71,7 +71,9 @@ class ComposeTransform:
 
 
 class DecomposeToSlices:
-    """ """
+    """
+    Decomposes a 3D map into smaller 3D slices.
+    """
 
     def __init__(self, map_shape: tuple, **kwargs):
         step = kwargs.get("step", 1)
@@ -101,6 +103,128 @@ class DecomposeToSlices:
             raise ValueError(msg)
         self.slices = slices
         self.slice_indicies = slice_indicies
+
+    def select_slices_min_class_fraction(
+        self,
+        label_array: np.ndarray,
+        class_fraction: dict[int, float],
+        padding: bool = True,
+        padding_value: float = 0.0,
+        skip_small: bool = False,
+    ):
+        """
+        Select slices based on the fraction of classes.
+
+        :param label_array: (np.ndarray) label array to check class values
+        :param class_fraction: (dict[int, float]) fraction threshold
+            for each class
+        :param padding: (bool) whether to pad the slice if 
+            it exceeds the map array dimensions
+        :param padding_value: (float) value to use for padding
+        :param skip_small: (bool) whether to skip small slices (that
+            exceed the map array dimensions)
+        """
+        for class_value, fraction in class_fraction.items():
+            selected_slices = []
+            selected_indices = []
+            for idx, slc in enumerate(self.slices):
+                slice_data = self.extract_slices(
+                    label_array,
+                    padding=padding,
+                    padding_value=padding_value,
+                    skip_small=skip_small,
+                )
+                if slice_data:
+                    class_count = np.sum(slice_data == class_value)
+                    total_count = slice_data.size
+                    if total_count == 0:
+                        continue
+                    if (class_count / total_count) >= fraction:
+                        selected_slices.append(slc)
+                        selected_indices.append(self.slice_indicies[idx])
+            self.slices = selected_slices
+            self.slice_indicies = selected_indices
+
+    def extract_slices(
+        self,
+        map_array: np.ndarray,
+        padding: bool = True,
+        padding_value: float = 0.0,
+        skip_small: bool = False,
+    ) -> list[np.ndarray]:
+        """
+        Extract slices from a Map array.
+
+        :param map_array: (np.ndarray) map array to extract slices from
+        :param padding: (bool) whether to pad the slice if 
+            it exceeds the map array dimensions
+        :param padding_value: (float) value to use for padding
+        :param skip_small: (bool) whether to skip small slices (that
+            exceed the map array dimensions)
+
+        :return: (list) list of np.ndarray slices
+        """
+        array_slices = []
+        slices = []
+        slice_indicies = []
+        for idx, slc in enumerate(self.slices):
+            slice_data = self.get_slice_array(
+                map_array,
+                slc,
+                padding=padding,
+                padding_value=padding_value,
+                skip_small=skip_small,)
+            if slice_data: 
+                array_slices.append(slice_data)
+                slices.append(slc)
+                slice_indicies.append(self.slice_indicies[idx])
+        # Update slices to only include successful extractions
+        self.slices = slices
+        self.slice_indicies = slice_indicies
+        return array_slices
+
+    def get_slice_array(
+        map_array: np.ndarray,
+        slc: tuple[slice, slice, slice],
+        padding: bool = True,
+        padding_value: float = 0.0,
+        skip_small: bool = False,
+    ) -> np.ndarray:
+        """
+        Get a specific slice from a Map array.
+
+        :param map_array: (np.ndarray) map array to extract the slice from
+        :param slc: (tuple) slice indices
+        :param padding: (bool) whether to pad the slice if 
+            it exceeds the map array dimensions
+        :param padding_value: (float) value to use for padding
+        :param skip_small: (bool) whether to skip small slices (that 
+            exceed the map array dimensions)
+
+        :return: (np.ndarray) extracted slice
+        """
+        if len(map_array.shape) != len(slc):
+            msg = "Map array must have the same number of dimensions as the slice."
+            raise ValueError(msg)
+        if any(s.stop > map_array.shape[idx] for idx, s in enumerate(slc)): 
+            print("Slice exceeds map array dimensions.")
+            if padding:
+                # Create a padded slice
+                padding_width = [
+                    (0, max(0, s.stop - map_array.shape[idx]))
+                    for idx, s in enumerate(slc)
+                ]
+                slice_data = np.pad(
+                    map_array[slc],
+                    pad_width=padding_width,
+                    mode="constant",
+                    constant_values=padding_value,
+                )
+                return slice_data
+            elif skip_small:
+                return None
+        slice_data = map_array[slc]
+        return slice_data
 
 
 class MapObjectVoxelNormalisation(TransformBase):
