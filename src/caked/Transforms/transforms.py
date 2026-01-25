@@ -78,15 +78,16 @@ class DecomposeToSlices:
     def __init__(self, map_shape: tuple, **kwargs):
         step = kwargs.get("step", 1)
         cshape = kwargs.get("cshape", 1)
+        edge = kwargs.get("edge", 0)
         slices, slice_indicies = [], []
 
         for i in range(0, map_shape[0], step):
             for j in range(0, map_shape[1], step):
                 for k in range(0, map_shape[2], step):
                     if (
-                        i + cshape > map_shape[0]
-                        or j + cshape > map_shape[1]
-                        or k + cshape > map_shape[2]
+                        i + cshape > map_shape[0]+edge
+                        or j + cshape > map_shape[1]+edge
+                        or k + cshape > map_shape[2]+edge
                     ):
                         continue
                     slices.append(
@@ -139,15 +140,16 @@ class DecomposeToSlices:
         label_slices = []
         for idx, slc in enumerate(self.slices):
             # extract slice array
-            slice_data = self.extract_slices(
+            slice_data = self.get_slice_array(
                 label_array,
+                slc,
                 padding=padding,
                 padding_value=padding_value,
                 skip_small=skip_small,
             )
             # check class fractions
             filter_slice = False
-            if slice_data:
+            if slice_data is not None:
                 for class_value, fraction in class_fraction.items():
                     class_count = np.sum(slice_data == class_value)
                     total_count = slice_data.size
@@ -160,8 +162,9 @@ class DecomposeToSlices:
                     selected_slices.append(slc)
                     selected_indices.append(self.slice_indicies[idx])
                     label_slices.append(slice_data)
-            self.slices = selected_slices
-            self.slice_indicies = selected_indices
+        # Update slices after filtering all of them
+        self.slices = selected_slices
+        self.slice_indicies = selected_indices
         return label_slices
 
     def extract_slices(
@@ -193,7 +196,7 @@ class DecomposeToSlices:
                 padding=padding,
                 padding_value=padding_value,
                 skip_small=skip_small,)
-            if slice_data: 
+            if slice_data is not None: 
                 array_slices.append(slice_data)
                 slices.append(slc)
                 slice_indicies.append(self.slice_indicies[idx])
@@ -203,6 +206,7 @@ class DecomposeToSlices:
         return array_slices
 
     def get_slice_array(
+        self,
         map_array: np.ndarray,
         slc: tuple[slice, slice, slice],
         padding: bool = True,
@@ -225,8 +229,7 @@ class DecomposeToSlices:
         if len(map_array.shape) != len(slc):
             msg = "Map array must have the same number of dimensions as the slice."
             raise ValueError(msg)
-        if any(s.stop > map_array.shape[idx] for idx, s in enumerate(slc)): 
-            print("Slice exceeds map array dimensions.")
+        if any(s.stop > map_array.shape[idx] for idx, s in enumerate(slc)):
             if padding:
                 # Create a padded slice
                 padding_width = [
